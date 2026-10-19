@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Limit działalności nierejestrowanej</title>
+  <meta name="description" content="Kalkulator limitu kwartalnego działalności nierejestrowanej 2026 i 2027: procent wykorzystania i progi ostrzeżeń.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="module" src="/js/limit.js"></script>
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="/">Narzędzia DN</a>
+      <nav aria-label="Główna nawigacja">
+        <a href="/">Start</a>
+        <a href="/limit-dzialalnosc-nierejestrowana/" aria-current="page">Limit</a>
+        <a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/">Ewidencja</a>
+        <a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <h1>Limit przychodu w działalności nierejestrowanej</h1>
+    <p class="lead">Od 2026 r. limit liczy się kwartalnie: 225% minimalnego wynagrodzenia.
+      W 2026 r. to 10&nbsp;813,50&nbsp;zł (225% × 4806&nbsp;zł), a w 2027 r. 11&nbsp;137,50&nbsp;zł (225% × 4950&nbsp;zł).</p>
+
+    <section class="card">
+      <h2>Kalkulator</h2>
+      <form id="limit-form" novalidate>
+        <div class="row">
+          <div>
+            <label for="rok">Rok</label>
+            <select id="rok" name="rok">
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+            </select>
+          </div>
+          <div>
+            <label for="kwartal">Kwartał</label>
+            <select id="kwartal" name="kwartal">
+              <option value="1">I (styczeń–marzec)</option>
+              <option value="2">II (kwiecień–czerwiec)</option>
+              <option value="3">III (lipiec–wrzesień)</option>
+              <option value="4">IV (październik–grudzień)</option>
+            </select>
+          </div>
+          <div>
+            <label for="placa">Minimalne wynagrodzenie (zł) <span class="hint">parametr</span></label>
+            <input id="placa" name="placa" inputmode="decimal" autocomplete="off" value="4806">
+          </div>
+          <div>
+            <label for="przychod">Przychód w kwartale (zł)</label>
+            <input id="przychod" name="przychod" inputmode="decimal" autocomplete="off" placeholder="np. 2500,00">
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">Policz</button>
+          <label class="button secondary" for="plik-ewidencji">Weź przychód z pliku ewidencji (CSV)</label>
+          <input class="file-input" id="plik-ewidencji" type="file" accept=".csv,text/csv">
+        </div>
+        <p class="small muted">Plik ewidencji z naszego narzędzia jest czytany tylko w Twojej przeglądarce.
+          Sumujemy kolumnę <code>kwota_pln</code> z wybranego kwartału, razem z korektami.</p>
+      </form>
+
+      <div id="wynik" class="result" aria-live="polite" hidden>
+        <p><span class="big" id="wynik-procent"></span> <span class="muted">limitu wykorzystane</span></p>
+        <meter id="wynik-meter" min="0" max="100" low="70" high="95" optimum="0" value="0"></meter>
+        <p id="wynik-status"></p>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><th scope="row">Kwartał</th><td class="num" id="wynik-kwartal"></td></tr>
+              <tr><th scope="row">Limit kwartalny</th><td class="num" id="wynik-limit"></td></tr>
+              <tr><th scope="row">Przychód</th><td class="num" id="wynik-przychod"></td></tr>
+              <tr><th scope="row">Pozostało do limitu</th><td class="num" id="wynik-pozostalo"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p id="blad" class="notice danger" role="alert" hidden></p>
+    </section>
+
+    <section>
+      <h2>Jak liczymy</h2>
+      <ul>
+        <li>Limit = 225% minimalnego wynagrodzenia, zaokrąglone do grosza. Minimalne wynagrodzenie możesz zmienić w polu „parametr”.</li>
+        <li>Progi ostrzeżeń: 70%, 85%, 95% i 100% limitu.</li>
+        <li>Przychód z pliku ewidencji to suma kwot w złotych (po kursie NBP) z dni w wybranym kwartale, pomniejszona o wpisane korekty.</li>
+        <li>Przychód liczymy w wariancie ostrożnym: cała kwota zapłacona przez klienta w dniu sprzedaży. To założenie narzędzia, nie interpretacja przepisów.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Przekroczenie limitu — informacje ogólne</h2>
+      <p>Według poradników administracji (podatki.gov.pl, biznes.gov.pl):</p>
+      <ul>
+        <li>po przekroczeniu limitu w kwartale działalność przestaje być działalnością nierejestrowaną;</li>
+        <li>wniosek o wpis do CEIDG trzeba złożyć w ciągu <strong>7 dni</strong> od dnia przekroczenia limitu;</li>
+        <li>działalność nierejestrowaną może prowadzić osoba, która nie prowadziła działalności gospodarczej w ciągu ostatnich 60 miesięcy.</li>
+      </ul>
+      <p>To nie jest opis Twojej sytuacji. Szczegóły i wyjątki znajdziesz w źródłach poniżej,
+        a w sprawach indywidualnych zapytaj doradcę podatkowego lub Krajową Informację Skarbową.</p>
+      <ul class="sources small">
+        <li><a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl — Działalność nierejestrowana</a> (poradnik MF, aktualizacja 26.05.2026; sprawdzono 18.10.2026)</li>
+        <li><a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl — Działalność nierejestrowana i inne rodzaje działalności, których nie trzeba rejestrować</a> (sprawdzono 18.10.2026)</li>
+        <li><a href="https://eli.gov.pl/eli/DU/2026/1213/ogl" rel="noopener noreferrer">Dz.U. 2026 poz. 1213</a> — rozporządzenie Rady Ministrów z 14.09.2026: minimalne wynagrodzenie od 1.01.2027 r. 4950 zł (sprawdzono 18.10.2026)</li>
+        <li>Art. 5 ust. 1 ustawy z 6 marca 2018 r. — Prawo przedsiębiorców (limit 225% minimalnego wynagrodzenia na kwartał, warunek 60 miesięcy)</li>
+      </ul>
+    </section>
+
+  </main>
+  <footer class="site">
+    <div class="wrap">
+      <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
+      <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
+      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O narzędziach i usługodawcy</a> · Bez ciasteczek, dane zostają w Twojej przeglądarce</p>
+    </div>
+  </footer>
+</body>
+</html>

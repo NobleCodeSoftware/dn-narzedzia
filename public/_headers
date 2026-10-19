@@ -1,0 +1,13 @@
+# Cloudflare Pages: nagłówki dla wszystkich ścieżek.
+# CSP musi być zgodny z meta CSP w plikach HTML (sprawdza test/strony.test.js).
+# Cloudflare Web Analytics NIE jest włączone; żeby je włączyć, dopisz
+# https://static.cloudflareinsights.com do script-src i https://cloudflareinsights.com do connect-src.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; frame-ancestors 'none'
+  X-Robots-Tag: noindex, nofollow
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin

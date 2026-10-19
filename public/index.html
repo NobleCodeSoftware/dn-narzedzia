@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Narzędzia DN</title>
+  <meta name="description" content="Darmowe narzędzia dla działalności nierejestrowanej: limit kwartalny, ewidencja sprzedaży z kursem NBP, informacje o KSeF 2027.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="/">Narzędzia DN</a>
+      <nav aria-label="Główna nawigacja">
+        <a href="/" aria-current="page">Start</a>
+        <a href="/limit-dzialalnosc-nierejestrowana/">Limit</a>
+        <a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/">Ewidencja</a>
+        <a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <h1>Narzędzia dla działalności nierejestrowanej</h1>
+    <p class="lead">Licznik limitu kwartalnego, ewidencja sprzedaży z kursem NBP i zebrane źródła o KSeF.
+      Wszystko działa w Twojej przeglądarce: nie zakładasz konta, a Twoje dane nie trafiają na nasz serwer.</p>
+
+    <div class="notice info">
+      <p><strong>Wersja testowa.</strong> Strona nie jest jeszcze indeksowana. Narzędzia liczą według
+        przepisów opisanych na stronach rządowych, ale mogą zawierać błędy. Nie stanowią doradztwa podatkowego.</p>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h2><a href="/limit-dzialalnosc-nierejestrowana/">Limit przychodu</a></h2>
+        <p>Ile limitu kwartalnego zostało: 10&nbsp;813,50&nbsp;zł w 2026 r., 11&nbsp;137,50&nbsp;zł w 2027 r.
+          Progi ostrzeżeń 70, 85, 95 i 100%.</p>
+      </section>
+      <section class="card">
+        <h2><a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/">Ewidencja sprzedaży</a></h2>
+        <p>Ewidencja w pliku CSV na Twoim dysku. Import z Gumroad i Polar, kurs średni NBP z dnia
+          roboczego przed sprzedażą, widok do wydruku.</p>
+      </section>
+      <section class="card">
+        <h2><a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a></h2>
+        <p>Ogólne informacje o Krajowym Systemie e-Faktur w działalności nierejestrowanej, z datami i linkami do źródeł.</p>
+      </section>
+    </div>
+
+    <h2>Jak traktujemy Twoje dane</h2>
+    <ul>
+      <li>Obliczenia wykonuje Twoja przeglądarka. Nie mamy serwera aplikacji ani bazy danych.</li>
+      <li>Ewidencję trzymasz we własnym pliku CSV. Kopię roboczą w przeglądarce włączasz sam i możesz ją usunąć.</li>
+      <li>Strona nie używa ciasteczek ani analityki. Jedyne zapytania na zewnątrz to pobranie kursów z API NBP
+        (wysyłamy tylko kod waluty i daty).</li>
+    </ul>
+
+  </main>
+  <footer class="site">
+    <div class="wrap">
+      <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
+      <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
+      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O narzędziach i usługodawcy</a> · Bez ciasteczek, dane zostają w Twojej przeglądarce</p>
+    </div>
+  </footer>
+</body>
+</html>

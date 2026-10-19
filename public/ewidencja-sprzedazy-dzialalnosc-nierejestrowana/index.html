@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Ewidencja sprzedaży DN</title>
+  <meta name="description" content="Ewidencja sprzedaży w działalności nierejestrowanej w pliku CSV: import Gumroad i Polar, kurs NBP, widok do wydruku.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="module" src="/js/ewidencja.js"></script>
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="/">Narzędzia DN</a>
+      <nav aria-label="Główna nawigacja">
+        <a href="/">Start</a>
+        <a href="/limit-dzialalnosc-nierejestrowana/">Limit</a>
+        <a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/" aria-current="page">Ewidencja</a>
+        <a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="no-print">
+    <h1>Ewidencja sprzedaży</h1>
+    <p class="lead">Ewidencja jest Twoim plikiem CSV. Otwórz go, dopisz sprzedaż i zapisz z powrotem na dysk.
+      Nic nie wysyłamy na serwer.</p>
+
+    <div class="notice warn" role="note">
+      <p><strong>Zapisuj plik po każdej zmianie.</strong> Pamięć przeglądarki jest tu tylko buforem.
+        Safari (także każda przeglądarka na iPhonie i iPadzie) może usunąć dane strony po 7 dniach bez wizyty,
+        a czyszczenie historii usuwa je w każdej przeglądarce. Ewidencja musi przetrwać, więc trzymaj ją w pliku
+        i w kopii zapasowej.</p>
+    </div>
+
+    <section class="card" aria-labelledby="plik-h">
+      <h2 id="plik-h">Plik ewidencji</h2>
+      <p id="stan-pliku" aria-live="polite">Brak otwartego pliku — zaczynasz nową, pustą ewidencję.</p>
+      <div class="actions">
+        <button type="button" id="nowa" class="secondary">Nowa ewidencja</button>
+        <label class="button secondary" for="otworz">Otwórz plik CSV</label>
+        <input class="file-input" id="otworz" type="file" accept=".csv,text/csv">
+        <button type="button" id="zapisz">Zapisz plik CSV</button>
+      </div>
+      <label class="check"><input type="checkbox" id="bufor-wlacz"> Trzymaj kopię roboczą w tej przeglądarce (bufor, nie zastępuje pliku)</label>
+      <div class="actions" id="bufor-akcje" hidden>
+        <button type="button" id="bufor-przywroc" class="secondary">Przywróć kopię roboczą</button>
+        <button type="button" id="bufor-usun" class="secondary">Usuń kopię roboczą</button>
+      </div>
+      <p id="bufor-info" class="small muted" aria-live="polite"></p>
+    </section>
+
+    <section class="card" aria-labelledby="dodaj-h">
+      <h2 id="dodaj-h">Dodaj sprzedaż</h2>
+      <form id="dodaj-form" novalidate>
+        <div class="row">
+          <div><label for="f-data">Data sprzedaży</label><input id="f-data" type="date" required></div>
+          <div><label for="f-kanal">Kanał <span class="hint">np. gumroad, gotówka</span></label><input id="f-kanal" autocomplete="off" required maxlength="60"></div>
+          <div><label for="f-id">Identyfikator transakcji</label><input id="f-id" autocomplete="off" required maxlength="120"></div>
+        </div>
+        <div class="row">
+          <div><label for="f-opis">Opis <span class="hint">bez danych osobowych klienta</span></label><input id="f-opis" autocomplete="off" maxlength="200"></div>
+          <div><label for="f-kwota">Kwota <span class="hint">zwrot: wartość ujemna</span></label><input id="f-kwota" inputmode="decimal" autocomplete="off" required></div>
+          <div><label for="f-waluta">Waluta (kod ISO)</label><input id="f-waluta" list="waluty" value="PLN" autocomplete="off" maxlength="3" required>
+            <datalist id="waluty"><option value="PLN"><option value="EUR"><option value="USD"><option value="GBP"><option value="CHF"></datalist></div>
+        </div>
+        <div class="row">
+          <div><label for="f-kurs">Kurs średni NBP <span class="hint">puste = pobierz</span></label><input id="f-kurs" inputmode="decimal" autocomplete="off"></div>
+          <div><label for="f-data-kursu">Data kursu</label><input id="f-data-kursu" type="date"></div>
+          <div><label for="f-korekta">Korekta do lp <span class="hint">dla zwrotu</span></label><input id="f-korekta" inputmode="numeric" autocomplete="off"></div>
+        </div>
+        <div class="actions">
+          <button type="submit">Dodaj wpis</button>
+          <button type="button" id="pobierz-kurs" class="secondary">Pobierz kurs NBP</button>
+        </div>
+        <p class="small muted">Kurs: średni kurs NBP (tabela A) z ostatniego dnia roboczego przed dniem sprzedaży,
+          pobierany z <a href="https://api.nbp.pl/" rel="noopener noreferrer">API NBP</a>. Do NBP trafia tylko kod waluty i zakres dat.</p>
+      </form>
+      <p id="dodaj-komunikat" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="card" aria-labelledby="import-h">
+      <h2 id="import-h">Import z Gumroad lub Polar</h2>
+      <p>Wybierz plik CSV wyeksportowany z panelu platformy. Narzędzie rozpozna format, pominie transakcje,
+        które już są w ewidencji, i pobierze kursy NBP. Adresy e-mail i dane kupujących są pomijane.</p>
+      <div class="actions">
+        <label class="button secondary" for="import">Wybierz eksport CSV</label>
+        <input class="file-input" id="import" type="file" accept=".csv,text/csv">
+      </div>
+      <details>
+        <summary>Jakie kolumny czytamy (założenia)</summary>
+        <ul class="small">
+          <li><strong>Gumroad</strong> (eksport sprzedaży): <code>Purchase ID</code>, <code>Purchase Date</code>,
+            <code>Purchase Time (UTC timezone)</code>, <code>Item Name</code>, <code>Sale Price ($)</code>,
+            <code>Refunded?</code>, <code>Partial Refund ($)</code>, <code>Fully Refunded?</code>, <code>Disputed?</code>.
+            Kwota = <code>Sale Price</code> (cena zapłacona przez kupującego), waluta z nagłówka kolumny (<code>$</code> = USD).
+            Data = dzień w strefie czasowej Warszawy.</li>
+          <li><strong>Polar</strong> (eksport zamówień): <code>Created At</code>, <code>Product</code>, <code>Currency</code>,
+            <code>Status</code>, <code>Invoice number</code>, <code>Total</code> albo <code>Net Amount</code>.
+            Kwota = <code>Total</code> (z podatkiem); bez tej kolumny używamy <code>Net Amount</code> i ostrzegamy.
+            Statusy <code>pending</code> i <code>void</code> pomijamy.</li>
+          <li>Zwroty i spory nie są księgowane automatycznie, bo eksport nie podaje daty zwrotu. Dostaniesz listę do ręcznej korekty.</li>
+          <li>Nazwy kolumn ustaliliśmy z kodu źródłowego obu platform (stan na 18.10.2026). Jeśli platforma zmieni format, import pokaże błąd.</li>
+        </ul>
+      </details>
+      <div id="import-wynik" class="log" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="limit-h">
+      <h2 id="limit-h">Limit w kwartale</h2>
+      <p id="limit-stan" aria-live="polite">Dodaj sprzedaż albo otwórz plik, aby zobaczyć wykorzystanie limitu.</p>
+      <meter id="limit-meter" min="0" max="100" low="70" high="95" optimum="0" value="0" hidden></meter>
+      <p class="small muted">Limit z <a href="/limit-dzialalnosc-nierejestrowana/">kalkulatora</a>: 225% minimalnego wynagrodzenia
+        w roku kwartału (2026: 4806&nbsp;zł, 2027: 4950&nbsp;zł). Kwartał według daty ostatniego wpisu albo dzisiejszej.</p>
+    </section>
+
+    <section class="card" aria-labelledby="wpisy-h">
+      <h2 id="wpisy-h">Wpisy (<span id="liczba-wpisow">0</span>)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Lp.</th><th>Data</th><th>Kanał</th><th>Id</th><th>Opis</th><th class="num">Kwota</th><th>Waluta</th><th class="num">Kurs NBP</th><th>Data kursu</th><th class="num">Kwota zł</th><th>Korekta do</th></tr>
+          </thead>
+          <tbody id="wpisy"></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button type="button" id="usun-ostatni" class="secondary">Usuń ostatni wpis</button>
+      </div>
+      <div id="walidacja" class="notice danger" role="alert" hidden></div>
+    </section>
+    </div>
+
+    <section class="card" id="widok" aria-labelledby="widok-h">
+      <h2 id="widok-h" class="no-print">Widok ustawowy i wydruk</h2>
+      <div class="no-print">
+        <p>Uproszczona ewidencja sprzedaży za miesiąc: kwota przychodu z danego dnia i narastająco od początku miesiąca.
+          Wydrukuj albo zapisz jako PDF (w oknie drukowania wybierz „Zapisz jako PDF”).</p>
+        <div class="row">
+          <div><label for="miesiac">Miesiąc</label><input id="miesiac" type="month"></div>
+        </div>
+        <div class="actions"><button type="button" id="drukuj">Drukuj / PDF</button></div>
+      </div>
+      <h1 class="print-only" id="raport-tytul">Uproszczona ewidencja sprzedaży</h1>
+      <p class="print-only">Imię i nazwisko: ______________________________ &nbsp; Adres: ______________________________</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Lp.</th><th>Data sprzedaży</th><th class="num">Kwota przychodu z danego dnia (zł)</th><th class="num">Kwota przychodu narastająco od początku miesiąca (zł)</th></tr>
+          </thead>
+          <tbody id="raport"></tbody>
+        </table>
+      </div>
+      <p class="print-only small">Wydruk z narzędzia Narzędzia DN (eksperyment NobleCode, prowadzony z udziałem AI). Nie stanowi doradztwa podatkowego.</p>
+    </section>
+
+  </main>
+  <footer class="site">
+    <div class="wrap">
+      <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
+      <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
+      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O narzędziach i usługodawcy</a> · Bez ciasteczek, dane zostają w Twojej przeglądarce</p>
+    </div>
+  </footer>
+</body>
+</html>
