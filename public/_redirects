@@ -1,0 +1,7 @@
+# Stałe przekierowania usuniętych podstron na jedną stronę główną. Tylko stałe cele w tej domenie.
+/limit-dzialalnosc-nierejestrowana/ / 301
+/limit-dzialalnosc-nierejestrowana / 301
+/ksef-2027-dzialalnosc-nierejestrowana/ /#ksef 301
+/ksef-2027-dzialalnosc-nierejestrowana /#ksef 301
+/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/ /#arkusz 301
+/ewidencja-sprzedazy-dzialalnosc-nierejestrowana /#arkusz 301

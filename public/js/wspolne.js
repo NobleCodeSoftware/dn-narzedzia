@@ -1,37 +1,36 @@
-// Wspólne pomocniki interfejsu bez zależności od DOM (testowane w node:test).
+// Teksty wyniku licznika, bez zależności od DOM (testowane w node:test).
+// Informacja ogólna, bez wniosków indywidualnych.
 
-/** Komunikat dla progu limitu. Informacja ogólna, bez wniosków indywidualnych. */
+/** Krótki komunikat dla progu limitu (70/85/95/100%). */
 export function opisProgu(s) {
-  if (s.przekroczony) {
-    return 'Przychód przekracza limit kwartalny. Przeczytaj poniżej ogólne informacje o skutkach przekroczenia (termin 7 dni na wniosek do CEIDG) i sprawdź je w źródłach.';
-  }
+  if (s.przekroczony) return 'Limit przekroczony.';
   switch (s.prog) {
-    case '1.00': return 'Wykorzystano 100% limitu. Każda kolejna sprzedaż w tym kwartale przekroczy limit.';
-    case '0.95': return 'Wykorzystano co najmniej 95% limitu.';
-    case '0.85': return 'Wykorzystano co najmniej 85% limitu.';
+    case '1.00': return 'Limit wykorzystany w całości. Każda kolejna sprzedaż w tym kwartale go przekroczy.';
+    case '0.95': return 'Uwaga: wykorzystano co najmniej 95% limitu.';
+    case '0.85': return 'Uwaga: wykorzystano co najmniej 85% limitu.';
     case '0.70': return 'Wykorzystano co najmniej 70% limitu.';
-    default: return 'Poniżej pierwszego progu ostrzeżenia (70%).';
+    default: return 'Mieścisz się w limicie.';
   }
 }
 
 export function klasaProgu(s) {
-  if (s.przekroczony || s.prog === '1.00' || s.prog === '0.95') return 'status-danger';
-  if (s.prog) return 'status-warn';
-  return 'status-ok';
+  if (s.przekroczony || s.prog === '1.00') return 'poziom-100';
+  if (s.prog === '0.95') return 'poziom-95';
+  if (s.prog === '0.85') return 'poziom-85';
+  if (s.prog === '0.70') return 'poziom-70';
+  return 'poziom-ok';
 }
 
-/** Dostęp do localStorage odporny na tryb prywatny, blokady i brak API. */
-export function magazyn(okno = globalThis) {
-  const pobierzLs = () => { try { return okno.localStorage || null; } catch { return null; } };
-  return {
-    czytaj(klucz) { try { const ls = pobierzLs(); return ls ? ls.getItem(klucz) : null; } catch { return null; } },
-    zapisz(klucz, wartosc) { try { const ls = pobierzLs(); if (!ls) return false; ls.setItem(klucz, wartosc); return true; } catch { return false; } },
-    usun(klucz) { try { const ls = pobierzLs(); if (ls) ls.removeItem(klucz); } catch { /* brak dostępu */ } },
-  };
+/** „45,2%” — jedno miejsce po przecinku, zapis polski. */
+export function procentTekst(procent) {
+  return `${procent.toLocaleString('pl-PL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
-/** Nazwa pliku do zapisu: ewidencja-sprzedazy-RRRR-MM-DD.csv albo nazwa otwartego pliku. */
-export function nazwaPliku(otwarty, dzis) {
-  if (otwarty && /\.csv$/i.test(otwarty)) return otwarty;
-  return `ewidencja-sprzedazy-${dzis}.csv`;
+/** Zdanie z kwotami: ile zostało albo o ile przekroczono limit. */
+export function szczegolyWyniku(s, formatujZl, etykietaKwartalu) {
+  if (s.przekroczony) {
+    return `Przychód jest o ${formatujZl(-s.pozostaloGr)} wyższy niż limit ${formatujZl(s.limitGr)} na ${etykietaKwartalu}. `
+      + 'Przeczytaj niżej, co mówią poradniki administracji o przekroczeniu limitu.';
+  }
+  return `Do limitu ${formatujZl(s.limitGr)} na ${etykietaKwartalu} zostało ${formatujZl(s.pozostaloGr)}.`;
 }

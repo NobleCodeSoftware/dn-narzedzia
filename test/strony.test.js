@@ -24,11 +24,47 @@ const cspNaglowek = /Content-Security-Policy: (.+)/.exec(naglowki)[1].trim();
 
 test('są wszystkie strony', () => {
   const sciezki = HTML.map((p) => relative(PUBLIC, p).replaceAll('\\', '/')).sort();
-  assert.deepEqual(sciezki, [
-    'ewidencja-sprzedazy-dzialalnosc-nierejestrowana/index.html', 'index.html',
-    'ksef-2027-dzialalnosc-nierejestrowana/index.html', 'limit-dzialalnosc-nierejestrowana/index.html',
-    'o-nas/index.html', 'prywatnosc/index.html', 'regulamin/index.html',
-  ]);
+  assert.deepEqual(sciezki, ['index.html', 'o-nas/index.html', 'prywatnosc/index.html', 'regulamin/index.html']);
+});
+
+test('bez webowej ewidencji i linków do usuniętych podstron', () => {
+  for (const plik of [...HTML, ...JS]) {
+    const tresc = readFileSync(plik, 'utf8');
+    assert.ok(!/ewidencja-sprzedazy|ewidencja\.js|\/limit-dzialalnosc-nierejestrowana\/|\/ksef-2027-dzialalnosc/.test(tresc), `${plik}: odwołanie do usuniętej strony`);
+    assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(/.test(tresc), `${plik}: pamięć przeglądarki albo zapytanie sieciowe`);
+  }
+});
+
+test('strona główna: licznik, sekcja KSeF ze źródłami, jedna akcja „Pobierz arkusz”', () => {
+  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  assert.match(html, /<h1>Limit działalności nierejestrowanej 2026 i 2027<\/h1>/);
+  assert.match(html, /10&nbsp;813,50/);
+  assert.match(html, /11&nbsp;137,50/);
+  assert.match(html, /<h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej \(DN\)<\/h2>/);
+  assert.match(html, /href="https:\/\/ksef\.podatki\.gov\.pl\//);
+  assert.match(html, /href="https:\/\/www\.biznes\.gov\.pl\//);
+  assert.equal([...html.matchAll(/<button\b/g)].length, 1, 'jeden przycisk w formularzu');
+  const pobierz = [...html.matchAll(/href="(\/pobierz\/[^"]+)" download/g)].map((m) => m[1]);
+  assert.deepEqual(pobierz, ['/pobierz/arkusz-limit-dn.xlsx']);
+  const ksef = html.slice(html.indexOf('id="ksef"'), html.indexOf('</section>', html.indexOf('id="ksef"')));
+  const slowa = ksef.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').split(/\s+/).filter((w) => /[\p{L}\d]/u.test(w));
+  assert.ok(slowa.length <= 150, `sekcja KSeF ma ${slowa.length} słów`);
+});
+
+test('arkusz XLSX: jest, to ZIP, bez makr i łączy zewnętrznych', () => {
+  const plik = readFileSync(join(PUBLIC, 'pobierz/arkusz-limit-dn.xlsx'));
+  assert.equal(plik.subarray(0, 2).toString('latin1'), 'PK');
+  const nazwy = plik.toString('latin1'); // nazwy plików w ZIP nie są kompresowane
+  assert.ok(nazwy.includes('xl/workbook.xml'));
+  for (const zakazane of ['vbaProject', 'externalLink', 'activeX', 'connections.xml', 'queryTable']) {
+    assert.ok(!nazwy.includes(zakazane), `arkusz zawiera ${zakazane}`);
+  }
+});
+
+test('_redirects: tylko stałe przekierowania usuniętych podstron na stronę główną', () => {
+  const linie = readFileSync(join(PUBLIC, '_redirects'), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#'));
+  assert.ok(linie.length > 0);
+  for (const l of linie) assert.match(l, /^\/[a-z0-9-]+\/? \/(#[a-z]+)? 301$/, l);
 });
 
 for (const plik of HTML) {
@@ -55,16 +91,17 @@ test('_headers: noindex, nosniff, frame-ancestors', () => {
   assert.match(naglowki, /X-Robots-Tag: noindex, nofollow/);
   assert.match(naglowki, /X-Content-Type-Options: nosniff/);
   assert.match(cspNaglowek, /frame-ancestors 'none'/);
-  assert.match(cspNaglowek, /connect-src https:\/\/api\.nbp\.pl;/);
+  assert.match(cspNaglowek, /^default-src 'none';/);
+  assert.ok(!/connect-src/.test(cspNaglowek), 'strona nie łączy się z innymi serwerami');
 });
 
-test('JS: brak ciasteczek, eval i zewnętrznych adresów poza API NBP', () => {
+test('JS: brak ciasteczek, eval i zewnętrznych adresów', () => {
   for (const plik of JS) {
     const kod = readFileSync(plik, 'utf8');
     assert.ok(!/document\.cookie/.test(kod), `${plik}: document.cookie`);
     assert.ok(!/\beval\(|new Function\(/.test(kod), `${plik}: eval`);
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML/.test(kod), `${plik}: wstrzykiwanie HTML`);
-    for (const [url] of kod.matchAll(/https?:\/\/[^\s'"`)]+/g)) assert.match(url, /^https:\/\/api\.nbp\.pl\//, `${plik}: ${url}`);
+    assert.ok(!/https?:\/\//.test(kod), `${plik}: zewnętrzny adres`);
   }
 });
 

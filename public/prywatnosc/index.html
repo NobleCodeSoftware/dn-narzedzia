@@ -3,48 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
   <title>Polityka prywatności</title>
-  <meta name="description" content="Polityka prywatności Narzędzi DN: bez ciasteczek, bez analityki, dane zostają w przeglądarce.">
+  <meta name="description" content="Polityka prywatności licznika limitu działalności nierejestrowanej: bez ciasteczek, bez analityki, dane zostają w przeglądarce.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/">Narzędzia DN</a>
-      <nav aria-label="Główna nawigacja">
-        <a href="/">Start</a>
-        <a href="/limit-dzialalnosc-nierejestrowana/">Limit</a>
-        <a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/">Ewidencja</a>
-        <a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a>
-      </nav>
+      <a class="brand" href="/">Limit działalności nierejestrowanej</a>
+      <a class="powrot" href="/">Wróć do licznika limitu</a>
     </div>
   </header>
   <main class="wrap">
     <h1>Polityka prywatności</h1>
-    <p class="muted">Wersja 0.1, obowiązuje od 18.10.2026.</p>
+    <p class="muted">Wersja 0.2, obowiązuje od dnia publikacji na stronie (wersja 0.1 z 18.10.2026 opisywała też ewidencję w przeglądarce i kursy NBP, które usunęliśmy).</p>
 
     <h2>Kto jest administratorem</h2>
     <p>NobleCode Krzysztof Mizgała, e-mail: <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>. Adres do korespondencji udostępniamy na prośbę wysłaną e-mailem.</p>
 
     <h2>Jakich danych nie zbieramy</h2>
-    <p>Narzędzie „Narzędzia DN” działa w przeglądarce. Dane wpisane w narzędziu, w tym ewidencja sprzedaży i otwierane pliki CSV,
-      zostają na Twoim urządzeniu. Nie przesyłamy ich do nas ani do osób trzecich. Nie tworzymy kont, nie używamy ciasteczek,
-      narzędzi analitycznych ani skryptów śledzących.</p>
+    <p>Licznik limitu działa w Twojej przeglądarce. Kwoty, które w nim wpisujesz, nie są wysyłane do nas ani do osób trzecich
+      i nie są zapisywane. Nie tworzymy kont, nie używamy ciasteczek, pamięci przeglądarki, narzędzi analitycznych
+      ani skryptów śledzących. Strona nie łączy się z innymi serwerami.</p>
 
-    <h2>Kopia robocza w przeglądarce</h2>
-    <p>Kopia robocza jest opcjonalna i domyślnie wyłączona. Jeśli zaznaczysz „Trzymaj kopię roboczą w tej przeglądarce”, ewidencja jest zapisywana w pamięci lokalnej przeglądarki
-      (localStorage) na Twoim urządzeniu. Nie trafia do nas. Kopię usuniesz przyciskiem „Usuń kopię roboczą” albo czyszcząc dane
-      strony w przeglądarce. Po zaznaczeniu zapisujemy też samo ustawienie (że kopia jest włączona); po odznaczeniu ustawienie
-      jest usuwane. Bez zaznaczenia nic nie zapisujemy w pamięci przeglądarki. Zapis służy wyłącznie funkcji, którą sam włączasz.</p>
-
-    <h2>Kursy walut z NBP</h2>
-    <p>Do przeliczenia walut Twoja przeglądarka łączy się bezpośrednio z API Narodowego Banku Polskiego (api.nbp.pl).
-      W zapytaniu przekazywany jest kod waluty i zakres dat, a NBP — jak każdy serwer — widzi adres IP. Wyłączamy wysyłanie
-      ciasteczek i nagłówka Referer. NBP przetwarza te dane jako odrębny podmiot na własnych zasadach.</p>
+    <h2>Arkusz do pobrania</h2>
+    <p>Arkusz to zwykły plik XLSX bez makr i bez połączeń z internetem. To, co w nim wpiszesz, zostaje w pliku na Twoim
+      urządzeniu albo w usłudze, do której sam go wgrasz (np. Arkusze Google, na zasadach tej usługi). Nie mamy dostępu
+      do tego pliku. Pobranie pliku to zwykłe żądanie do serwera strony, opisane niżej.</p>
 
     <h2>Dane techniczne serwera</h2>
     <p>Stronę hostuje Cloudflare, Inc. z USA (usługa Cloudflare Pages). Przy każdym wejściu na stronę Cloudflare automatycznie
@@ -84,7 +73,7 @@
     <div class="wrap">
       <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
       <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
-      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O narzędziach i usługodawcy</a> · Bez ciasteczek, dane zostają w Twojej przeglądarce</p>
+      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O nas</a></p>
     </div>
   </footer>
 </body>

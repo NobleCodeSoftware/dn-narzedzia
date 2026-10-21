@@ -3,67 +3,122 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
-  <title>Narzędzia DN</title>
-  <meta name="description" content="Darmowe narzędzia dla działalności nierejestrowanej: limit kwartalny, ewidencja sprzedaży z kursem NBP, informacje o KSeF 2027.">
+  <title>Limit działalności nierejestrowanej 2026 i 2027</title>
+  <meta name="description" content="Wpisz przychód z kwartału i sprawdź, ile limitu działalności nierejestrowanej wykorzystałeś. Limit 2026: 10 813,50 zł, 2027: 11 137,50 zł. Darmowy arkusz do pobrania.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
+  <script type="module" src="/js/limit.js"></script>
 </head>
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/">Narzędzia DN</a>
-      <nav aria-label="Główna nawigacja">
-        <a href="/" aria-current="page">Start</a>
-        <a href="/limit-dzialalnosc-nierejestrowana/">Limit</a>
-        <a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/">Ewidencja</a>
-        <a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a>
-      </nav>
+      <a class="brand" href="/" aria-current="page">Limit działalności nierejestrowanej</a>
     </div>
   </header>
   <main class="wrap">
-    <h1>Narzędzia dla działalności nierejestrowanej</h1>
-    <p class="lead">Licznik limitu kwartalnego, ewidencja sprzedaży z kursem NBP i zebrane źródła o KSeF.
-      Wszystko działa w Twojej przeglądarce: nie zakładasz konta, a Twoje dane nie trafiają na nasz serwer.</p>
+    <h1>Limit działalności nierejestrowanej 2026 i 2027</h1>
+    <p class="lead">Wpisz, ile zarobiłeś w kwartale. Zobaczysz, jaką część limitu już wykorzystałeś.</p>
 
-    <div class="notice info">
-      <p><strong>Wersja testowa.</strong> Strona nie jest jeszcze indeksowana. Narzędzia liczą według
-        przepisów opisanych na stronach rządowych, ale mogą zawierać błędy. Nie stanowią doradztwa podatkowego.</p>
-    </div>
+    <section class="card licznik" aria-labelledby="licznik-tytul">
+      <h2 id="licznik-tytul" class="sr-only">Licznik limitu</h2>
+      <form id="limit-form" novalidate>
+        <label for="kwartal">Kwartał</label>
+        <select id="kwartal" name="kwartal">
+          <option value="2026-1">I kwartał 2026 (sty–mar)</option>
+          <option value="2026-2">II kwartał 2026 (kwi–cze)</option>
+          <option value="2026-3">III kwartał 2026 (lip–wrz)</option>
+          <option value="2026-4" selected>IV kwartał 2026 (paź–gru)</option>
+          <option value="2027-1">I kwartał 2027 (sty–mar)</option>
+          <option value="2027-2">II kwartał 2027 (kwi–cze)</option>
+          <option value="2027-3">III kwartał 2027 (lip–wrz)</option>
+          <option value="2027-4">IV kwartał 2027 (paź–gru)</option>
+        </select>
 
-    <div class="grid">
-      <section class="card">
-        <h2><a href="/limit-dzialalnosc-nierejestrowana/">Limit przychodu</a></h2>
-        <p>Ile limitu kwartalnego zostało: 10&nbsp;813,50&nbsp;zł w 2026 r., 11&nbsp;137,50&nbsp;zł w 2027 r.
-          Progi ostrzeżeń 70, 85, 95 i 100%.</p>
-      </section>
-      <section class="card">
-        <h2><a href="/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/">Ewidencja sprzedaży</a></h2>
-        <p>Ewidencja w pliku CSV na Twoim dysku. Import z Gumroad i Polar, kurs średni NBP z dnia
-          roboczego przed sprzedażą, widok do wydruku.</p>
-      </section>
-      <section class="card">
-        <h2><a href="/ksef-2027-dzialalnosc-nierejestrowana/">KSeF 2027</a></h2>
-        <p>Ogólne informacje o Krajowym Systemie e-Faktur w działalności nierejestrowanej, z datami i linkami do źródeł.</p>
-      </section>
-    </div>
+        <label for="przychod">Przychód w tym kwartale</label>
+        <div class="pole-kwoty">
+          <input id="przychod" name="przychod" inputmode="decimal" autocomplete="off" placeholder="np. 2500,00" aria-describedby="przychod-podpowiedz">
+          <span class="jednostka" aria-hidden="true">zł</span>
+        </div>
+        <p id="przychod-podpowiedz" class="podpowiedz">Suma wszystkich wpływów ze sprzedaży w kwartale, w złotych.</p>
 
-    <h2>Jak traktujemy Twoje dane</h2>
-    <ul>
-      <li>Obliczenia wykonuje Twoja przeglądarka. Nie mamy serwera aplikacji ani bazy danych.</li>
-      <li>Ewidencję trzymasz we własnym pliku CSV. Kopię roboczą w przeglądarce włączasz sam i możesz ją usunąć.</li>
-      <li>Strona nie używa ciasteczek ani analityki. Jedyne zapytania na zewnątrz to pobranie kursów z API NBP
-        (wysyłamy tylko kod waluty i daty).</li>
-    </ul>
+        <button type="submit" class="glowny">Sprawdź limit</button>
+      </form>
 
+      <div id="wynik" class="wynik" aria-live="polite" hidden>
+        <p class="wynik-procent"><span id="wynik-procent">0%</span> <span class="wynik-podpis">limitu</span></p>
+        <div class="pasek" aria-hidden="true">
+          <div class="pasek-wypelnienie" id="pasek"></div>
+          <span class="znacznik z70"></span><span class="znacznik z85"></span><span class="znacznik z95"></span>
+        </div>
+        <p class="skala" aria-hidden="true"><span>0%</span><span>70</span><span>85</span><span>100%</span></p>
+        <p id="wynik-status" class="status"></p>
+        <p id="wynik-szczegoly"></p>
+      </div>
+      <p id="blad" class="blad" role="alert" hidden></p>
+      <p class="podpowiedz">Liczy Twoja przeglądarka. Kwota nie jest nigdzie wysyłana ani zapisywana.</p>
+    </section>
+
+    <section class="card arkusz" id="arkusz" aria-labelledby="arkusz-tytul">
+      <h2 id="arkusz-tytul">Licz na bieżąco w darmowym arkuszu</h2>
+      <p>Wpisujesz każdą sprzedaż, a arkusz sam liczy sumę kwartału i procent limitu. Kolory ostrzegają przy 70, 85, 95 i 100%.</p>
+      <ul>
+        <li>Sprzedaż w euro lub dolarach: wpisujesz kurs NBP, a arkusz przelicza na złote. W arkuszu jest instrukcja, skąd wziąć kurs.</li>
+        <li>Działa w Excelu, LibreOffice i Arkuszach Google. Bez makr, bez konta, bez internetu.</li>
+      </ul>
+      <a class="przycisk" href="/pobierz/arkusz-limit-dn.xlsx" download>Pobierz arkusz (XLSX, 115 KB)</a>
+    </section>
+
+    <section aria-labelledby="kwoty-tytul">
+      <h2 id="kwoty-tytul">Skąd te kwoty</h2>
+      <p>Limit na kwartał to 225% minimalnego wynagrodzenia (art. 5 ust. 1 ustawy Prawo przedsiębiorców).</p>
+      <div class="tabela">
+        <table>
+          <thead>
+            <tr><th scope="col">Rok</th><th scope="col" class="num">Płaca minimalna</th><th scope="col" class="num">Limit na kwartał</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">2026</th><td class="num">4806&nbsp;zł</td><td class="num">10&nbsp;813,50&nbsp;zł</td></tr>
+            <tr><th scope="row">2027</th><td class="num">4950&nbsp;zł</td><td class="num">11&nbsp;137,50&nbsp;zł</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="zrodla">Źródła: <a href="https://eli.gov.pl/eli/DU/2025/1242/ogl" rel="noopener noreferrer">Dz.U. 2025 poz. 1242</a> (płaca minimalna 2026),
+        <a href="https://eli.gov.pl/eli/DU/2026/1213/ogl" rel="noopener noreferrer">Dz.U. 2026 poz. 1213</a> (płaca minimalna 2027).</p>
+    </section>
+
+    <section aria-labelledby="przekroczenie-tytul">
+      <h2 id="przekroczenie-tytul">Gdy przekroczysz limit</h2>
+      <p>Według poradników administracji działalność przestaje być nierejestrowana. Wniosek o wpis do CEIDG
+        trzeba złożyć w ciągu 7 dni od dnia, w którym przekroczono limit.</p>
+      <p class="zrodla">Źródła: <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a>,
+        <a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl: Działalność nierejestrowana</a>.</p>
+    </section>
+
+    <section id="ksef" aria-labelledby="ksef-tytul">
+      <h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej (DN)</h2>
+      <dl class="daty">
+        <dt>Do 31 grudnia 2026</dt>
+        <dd>Faktury dla firm można wystawiać poza KSeF, jeśli sprzedaż na takich fakturach nie przekracza 10&nbsp;000&nbsp;zł brutto w miesiącu.</dd>
+        <dt>Od 1 stycznia 2027</dt>
+        <dd>Ten wyjątek się kończy. Faktury dla firm wystawia się w KSeF. Faktury dla osób prywatnych w KSeF są dobrowolne.</dd>
+      </dl>
+      <p>Faktura w KSeF musi mieć NIP wystawcy, a w działalności nierejestrowanej identyfikatorem jest zwykle PESEL. Jeśli nie masz NIP, jak go uzyskać opisuje poradnik Ministerstwa Finansów: <a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl: Działalność nierejestrowana</a>.</p>
+      <p class="zrodla">Źródła (stan na 21.10.2026): <a href="https://ksef.podatki.gov.pl/ponizej-10-000-zl/" rel="noopener noreferrer">ksef.podatki.gov.pl: Poniżej 10 000 zł</a>,
+        <a href="https://ksef.podatki.gov.pl/" rel="noopener noreferrer">ksef.podatki.gov.pl</a>,
+        <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a> (aktualizacja 5.05.2026).</p>
+    </section>
+
+    <p class="uwaga">Strona podaje informacje ogólne i nie ocenia Twojej sytuacji. W sprawach indywidualnych zapytaj
+      Krajową Informację Skarbową albo doradcę podatkowego.</p>
   </main>
   <footer class="site">
     <div class="wrap">
       <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
       <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
-      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O narzędziach i usługodawcy</a> · Bez ciasteczek, dane zostają w Twojej przeglądarce</p>
+      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O nas</a></p>
     </div>
   </footer>
 </body>

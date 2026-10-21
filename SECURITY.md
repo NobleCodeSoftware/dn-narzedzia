@@ -10,7 +10,7 @@ Jeśli ta opcja nie jest dostępna, załóż publiczne zgłoszenie o treści wy�
 requested”, bez szczegółów, a ustalimy kanał prywatny.
 
 Podaj: co znalazłeś, jak to odtworzyć, której strony lub pliku dotyczy i jaki widzisz skutek.
-Nie dołączaj prawdziwych plików ewidencji ani danych osobowych.
+Nie dołączaj arkuszy z prawdziwymi danymi ani danych osobowych.
 
 ## Czego się spodziewać
 - Potwierdzenie w ciągu 5 dni roboczych (projekt jest mały i prowadzony z udziałem agentów AI).
@@ -22,16 +22,15 @@ Nie dołączaj prawdziwych plików ewidencji ani danych osobowych.
 ## Zakres
 W zakresie: kod w `public/` (HTML, CSS, JS), nagłówki `public/_headers`, workflow w `.github/workflows/`.
 Szczególnie: wyciek danych z przeglądarki użytkownika na zewnątrz, obejście CSP, wstrzyknięcie
-skryptu przez importowany plik CSV, wstrzyknięcie formuły do zapisanego pliku CSV.
+skryptu, w arkuszu `public/pobierz/` makra, łącza zewnętrzne lub formuły łączące się z siecią.
 
-Poza zakresem: podatności Cloudflare, API NBP, przeglądarek i platform Gumroad/Polar (zgłoś je dostawcy).
+Poza zakresem: podatności Cloudflare, przeglądarek i programów arkuszowych (zgłoś je dostawcy).
 
 ## Model bezpieczeństwa (skrót)
-- Strona statyczna, bez backendu, kont i ciasteczek. Dane ewidencji zostają w przeglądarce i w pliku użytkownika.
-- CSP: `default-src 'none'`, skrypty i style tylko z tej samej domeny, połączenia tylko do `https://api.nbp.pl`.
-- Zapytanie do NBP: `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`; wysyłany jest tylko kod waluty i zakres dat.
-- Treść z plików CSV trafia do strony wyłącznie przez `textContent` (bez `innerHTML`).
-- Pola tekstowe zapisywane do CSV, które zaczynają się od `= + - @`, dostają prefiks `'` (ochrona przed formułami).
+- Strona statyczna, bez backendu, kont, ciasteczek i pamięci przeglądarki. Kwota z licznika zostaje w przeglądarce.
+- CSP: `default-src 'none'`, skrypty i style tylko z tej samej domeny, bez połączeń z innymi serwerami.
+- Treść trafia do strony wyłącznie przez `textContent` (bez `innerHTML`).
+- Arkusz XLSX generuje `scripts/arkusz.py` i sprawdza go (`--sprawdz`): bez makr, łączy zewnętrznych i `HYPERLINK`.
 
 ---
 English: please report vulnerabilities privately via GitHub Security Advisories on

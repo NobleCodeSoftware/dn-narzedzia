@@ -3,7 +3,7 @@
 # Cloudflare Web Analytics NIE jest włączone; żeby je włączyć, dopisz
 # https://static.cloudflareinsights.com do script-src i https://cloudflareinsights.com do connect-src.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; frame-ancestors 'none'
   X-Robots-Tag: noindex, nofollow
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
@@ -11,3 +11,7 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
+# Arkusz do pobrania: zawsze jako plik, nie podgląd w przeglądarce.
+/pobierz/*
+  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+  Content-Disposition: attachment; filename="arkusz-limit-dn.xlsx"

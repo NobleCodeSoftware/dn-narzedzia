@@ -1,56 +1,42 @@
-# Narzędzia DN (`dn.noblecode.pl`)
+# Limit DN (`dn.noblecode.pl`)
 
-Darmowe narzędzia dla działalności nierejestrowanej (DN), działające w całości w przeglądarce:
-kalkulator limitu przychodu, ewidencja sprzedaży w pliku użytkownika i informacje o KSeF od 2027 r.
+Licznik limitu przychodu działalności nierejestrowanej (DN) i darmowy arkusz do pobrania.
+Strona działa w całości w przeglądarce: bez kont, bez serwera aplikacji i bez zapytań do innych serwerów.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.1. To wersja testowa: strony mają `noindex` (zob. „Wdrożenie”).
+To wersja testowa: strony mają `noindex` (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
-| Strona | Co robi |
+| Ścieżka | Co robi |
 |---|---|
-| `/` | strona startowa z odnośnikami do narzędzi |
-| `/limit-dzialalnosc-nierejestrowana/` | kalkulator limitu kwartalnego: 2026 = 10 813,50 zł (225% × 4806 zł), 2027 = 11 137,50 zł (225% × 4950 zł); płaca minimalna jako parametr; progi 70/85/95/100%; przychód wpisany ręcznie albo wczytany z pliku ewidencji; ogólna informacja o skutkach przekroczenia limitu (7 dni na wniosek do CEIDG) z linkami do biznes.gov.pl i podatki.gov.pl |
-| `/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/` | ewidencja sprzedaży w pliku CSV użytkownika: otwieranie i zapis (File System Access API, a bez niego pobranie pliku), dodawanie wpisów, korekty (zwroty), import eksportów Gumroad i Polar, kurs średni NBP z ostatniego dnia roboczego przed sprzedażą (API NBP), status limitu, widok ustawowy (dzień, kwota, narastająco w miesiącu) i wydruk/PDF; opcjonalna kopia robocza w `localStorage` z ostrzeżeniem o Safari (7 dni) |
-| `/ksef-2027-dzialalnosc-nierejestrowana/` | informacje ogólne o KSeF z datami i źródłami (stan na 18.10.2026); bez kreatora i bez wniosków indywidualnych |
-| `/regulamin/`, `/prywatnosc/`, `/o-nas/` | regulamin, polityka prywatności oraz informacje o narzędziach, usługodawcy i udziale AI |
+| `/` | „Limit działalności nierejestrowanej 2026 i 2027”: licznik (kwartał + sprzedaż w kwartale → procent limitu, progi 70/85/95/100%), kwoty limitu ze źródłami (2026 = 10 813,50 zł = 225% × 4806 zł; 2027 = 11 137,50 zł = 225% × 4950 zł), ogólna informacja o przekroczeniu limitu (7 dni na wniosek do CEIDG), krótka sekcja „KSeF od 2027” z linkami do ksef.podatki.gov.pl i biznes.gov.pl |
+| `/pobierz/arkusz-limit-dn.xlsx` | darmowy arkusz (Excel, LibreOffice, Arkusze Google; bez makr i połączeń z siecią): data, opis, kwota, waluta, kurs NBP, kwota w PLN, suma kwartału narastająco, % limitu i ostrzeżenia (formatowanie warunkowe 70/85/95/100%); zakładki „Podsumowanie” (kwartały 2026–2028), „Limity” (płaca minimalna na rok, do uzupełnienia na 2028+), „Instrukcja” (m.in. jak znaleźć kurs średni NBP z dnia roboczego przed sprzedażą) |
+| `/regulamin/`, `/prywatnosc/`, `/o-nas/` | regulamin, polityka prywatności oraz informacje o narzędziu, usługodawcy i udziale AI |
+| `_redirects` | stałe przekierowania 301 dawnych podstron (`/limit-…`, `/ksef-2027-…`, `/ewidencja-sprzedazy-…`) na `/` |
 
-## Plik ewidencji
+Logika licznika (`public/js/logic.js`) liczy kwoty w groszach na `BigInt`, z zaokrągleniem połówkowym od zera
+(jak `ROUND_HALF_UP`), bez liczb zmiennoprzecinkowych. Kwoty płacy minimalnej są w dwóch miejscach:
+`PLACA_MINIMALNA` w `logic.js` i `PLACA` w `scripts/arkusz.py`. Zmieniaj je razem.
 
-Ewidencja to zwykły plik CSV, który zostaje u użytkownika. Kolumny (nagłówek w pierwszym wierszu):
+## Arkusz XLSX: jak odtworzyć
 
+```sh
+pip install openpyxl                  # MIT
+python3 scripts/arkusz.py --sprawdz   # zapisuje public/pobierz/arkusz-limit-dn.xlsx i sprawdza plik
 ```
-lp,data,kanal,id_transakcji,opis,kwota,waluta,kurs_nbp,data_kursu,kwota_pln,korekta_do
-```
 
-- Zapis dodaje BOM UTF-8, żeby Excel poprawnie pokazał polskie znaki. Odczyt BOM pomija.
-- Korekta (np. zwrot) to wpis z ujemną kwotą i numerem `lp` korygowanego wpisu w `korekta_do`.
-  Usunąć można tylko ostatni wpis, żeby nie przenumerowywać `lp` i odwołań korekt.
-- Pola tekstowe zaczynające się od `=`, `+`, `-` albo `@` dostają przy zapisie prefiks `'` (ochrona przed formułami w arkuszu).
-- Kwoty są liczone w groszach na `BigInt`, z zaokrągleniem połówkowym od zera (jak `ROUND_HALF_UP`), bez liczb zmiennoprzecinkowych.
-
-## Założenia importu (z kodu źródłowego platform, bez próbki prawdziwego eksportu)
-
-- **Gumroad** (eksport sprzedaży): kolumny ustalone z kodu źródłowego Gumroad
-  (`antiwork/gumroad`, fixture `spec/support/fixtures/financial-annual-summary-2022.csv`).
-  Kwota = `Sale Price ($)`, czyli cena zapłacona przez kupującego (wariant konserwatywny).
-  Waluta z nagłówka kolumny (`$` = USD). Data = dzień w strefie Europe/Warsaw z `Purchase Time (UTC timezone)`.
-  Pomijamy wiersz `Totals` i sprzedaż za 0. Zwroty i spory nie są księgowane automatycznie (brak daty zwrotu w eksporcie), tylko zgłaszane do ręcznej korekty.
-- **Polar** (eksport zamówień): kolumny z `server/polar/order/export.py` w `polarsource/polar`
-  (domyślnie: `Email, Created At, Product, Net Amount, Currency, Status, Invoice number`; opcjonalnie m.in. `Total`, `Refunded Amount`).
-  Kwota = `Total` (z podatkiem). Bez `Total` używamy `Net Amount` z ostrzeżeniem. Statusy `pending` i `void` pomijamy.
-  Bez numeru faktury identyfikator składa się z daty, produktu i kwoty.
-- E-maile, imiona i adresy kupujących są odrzucane przy imporcie i nigdy nie trafiają do ewidencji.
+Plik jest deterministyczny (stałe daty w metadanych i w ZIP), więc ponowne uruchomienie bez zmian w skrypcie daje
+identyczny plik. `--sprawdz` ponownie wczytuje plik przez openpyxl i odrzuca makra, łącza zewnętrzne, `HYPERLINK`
+i adresy w formułach. Formuły sprawdzono też w LibreOffice (headless, przeliczenie na danych przykładowych, bez błędów `#…`).
+Używane funkcje: `IF`, `OR`, `AND`, `ISNUMBER`, `ROUND`, `SUMIFS`, `COUNTIFS`, `DATE`, `YEAR`, `MONTH`, `INT`, `EOMONTH`,
+`VLOOKUP`, `IFERROR` (są w Excelu 2010+, LibreOffice i Arkuszach Google).
 
 ## Prywatność
 
-- Brak backendu, kont i ciasteczek. Pliki CSV są czytane lokalnie (`File.text()`), nic nie jest wysyłane.
-- Jedyne zapytanie zewnętrzne: `https://api.nbp.pl/api/exchangerates/rates/a/{waluta}/{od}/{do}/`.
-  Do NBP trafia tylko kod waluty i zakres dat, z `credentials: 'omit'` (NBP ustawia ciasteczko, przeglądarka go nie zapisze) i bez nagłówka `Referer`.
-- Kopia robocza w `localStorage` jest opcjonalna (domyślnie wyłączona) i zawsze stoi przy niej ostrzeżenie o Safari.
-- CSP: `default-src 'none'`, skrypty i style tylko z tej samej domeny, połączenia tylko do `https://api.nbp.pl`.
+- Brak backendu, kont, ciasteczek, pamięci przeglądarki i zapytań do innych serwerów (CSP `default-src 'none'`, bez `connect-src`).
+- Kwota wpisana w licznik nie opuszcza przeglądarki. Arkusz nie ma makr ani połączeń z siecią.
 - Strona jest statyczna i hostowana na Cloudflare Pages. Co przetwarza hosting i jak działa kontakt e-mail, opisuje `/prywatnosc/`.
 
 ## Jak uruchomić lokalnie
@@ -70,9 +56,9 @@ Moduły ES wymagają serwera HTTP. Strona otwarta jako `file://` nie zadziała.
 node --test            # Node 20+; bez zależności
 ```
 
-- `test/logic.test.js`: limit, progi, kwartały, strefa czasowa, kurs NBP (fetch wstrzyknięty, bez sieci), CSV, walidacja ewidencji, raport, import Gumroad i Polar.
-- `test/wspolne.test.js`: komunikaty progów, odporny dostęp do `localStorage`.
-- `test/strony.test.js`: higiena stron: `noindex`, meta CSP zgodny z `_headers`, stopka, brak skryptów, stylów i handlerów inline, brak zewnętrznych zasobów, brak `document.cookie`/`innerHTML`, w HTML jedyny adres e-mail to `kontakt@noblecode.pl` (link `mailto:` na każdej stronie; każdy inny adres, także zakodowany jako `&#64;`/`%40`, oblewa test).
+- `test/logic.test.js`: limit, progi, kwartały, strefa czasowa, kwoty.
+- `test/wspolne.test.js`: komunikaty progów i zdanie z kwotami.
+- `test/strony.test.js`: higiena stron: `noindex`, meta CSP zgodny z `_headers` (bez `connect-src`), stopka, brak skryptów, stylów i handlerów inline, brak zewnętrznych zasobów i adresów w JS, brak `document.cookie`/`innerHTML`/`localStorage`/`fetch`, brak odwołań do usuniętych stron, sekcja KSeF ≤ 150 słów, jedna akcja pobrania arkusza, arkusz bez makr i łączy, `_redirects` tylko stałe, w HTML jedyny adres e-mail to `kontakt@noblecode.pl`.
 - Przed publikacją: `npm run check:publish` kończy się błędem, gdy w `public/` został placeholder `{{...}}` albo znacznik `[DO-UZUPEŁNIENIA…]` (miejsce w tekście do uzupełnienia).
 
 CI: `.github/workflows/ci.yml` uruchamia `node --test` na Node 20 i 22 (push do `main` i pull requesty).
@@ -81,14 +67,17 @@ CI: `.github/workflows/ci.yml` uruchamia `node --test` na Node 20 i 22 (push do 
 
 ```
 public/                    gotowa strona (Cloudflare Pages, katalog wyjściowy)
-  _headers                 nagłówki HTTP: CSP, noindex, nosniff, Referrer-Policy, Permissions-Policy
+  _headers                 nagłówki HTTP: CSP, noindex, nosniff; arkusz zawsze jako załącznik
+  _redirects               stałe przekierowania dawnych podstron
   robots.txt
+  index.html               licznik, kwoty limitu, przekroczenie, KSeF
   css/style.css
-  js/logic.js              logika bez DOM: kwoty, daty, limit, kurs NBP, CSV, ewidencja, import
-  js/wspolne.js            komunikaty progów, dostęp do localStorage, nazwa pliku
-  js/limit.js              widok kalkulatora limitu
-  js/ewidencja.js          widok ewidencji
-  */index.html             podstrony
+  js/logic.js              logika licznika bez DOM: kwoty, kwartały, limit, progi
+  js/wspolne.js            teksty wyniku
+  js/limit.js              widok licznika
+  pobierz/arkusz-limit-dn.xlsx   arkusz do pobrania (generowany)
+  regulamin/, prywatnosc/, o-nas/
+scripts/arkusz.py          generator i kontrola arkusza (openpyxl)
 scripts/sprawdz-publikacje.mjs   kontrola przed publikacją
 test/                      testy node:test
 ```
@@ -96,8 +85,8 @@ test/                      testy node:test
 ## Wdrożenie (Cloudflare Pages)
 
 - Build command: brak. Output directory: `public`.
-- `public/_headers` ustawia CSP (z `frame-ancestors`), `X-Robots-Tag: noindex`, `nosniff`, `Referrer-Policy` i `Permissions-Policy`.
-  Meta CSP w każdym HTML musi być taki sam (pilnuje tego test).
+- `public/_headers` ustawia CSP (z `frame-ancestors`), `X-Robots-Tag: noindex`, `nosniff`, `Referrer-Policy` i `Permissions-Policy`,
+  a dla `/pobierz/*` typ pliku XLSX i `Content-Disposition: attachment`. Meta CSP w każdym HTML musi być taki sam (pilnuje tego test).
 - Wersja testowa ma `noindex` w meta `robots` i w nagłówku `X-Robots-Tag`. `robots.txt` pozwala na crawl, żeby wyszukiwarki widziały `noindex`.
   Włączenie indeksowania wymaga zdjęcia `noindex` (meta, `_headers`, testy) i dodania `sitemap.xml`.
 - Cloudflare Web Analytics jest **wyłączone**. Włączenie wymaga dopisania do CSP (meta i `_headers`)
@@ -111,10 +100,9 @@ test/                      testy node:test
   4950 zł w 2027 r. ([Dz.U. 2026 poz. 1213](https://eli.gov.pl/eli/DU/2026/1213/ogl)).
 - Działalność nierejestrowana i przekroczenie limitu: [biznes.gov.pl](https://www.biznes.gov.pl/pl/portal/00115),
   [podatki.gov.pl](https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana).
-- Kurs średni NBP z ostatniego dnia roboczego przed dniem uzyskania przychodu: art. 11a ust. 1 ustawy o PIT; dane z [API NBP](https://api.nbp.pl/).
-- KSeF: [ksef.podatki.gov.pl](https://ksef.podatki.gov.pl/) (szczegółowe odnośniki na podstronie KSeF).
+- KSeF: [ksef.podatki.gov.pl](https://ksef.podatki.gov.pl/), [Poniżej 10 000 zł](https://ksef.podatki.gov.pl/ponizej-10-000-zl/).
 
-Narzędzia podają informacje ogólne i nie stanowią doradztwa podatkowego.
+Strona podaje informacje ogólne i nie stanowi doradztwa podatkowego.
 
 ## Bezpieczeństwo i kontakt
 
@@ -122,4 +110,5 @@ Podatności zgłaszaj prywatnie, zgodnie z [SECURITY.md](SECURITY.md). Kontakt: 
 
 ## Licencja
 
-MIT, `Copyright (c) 2026 NobleCode`, zob. [LICENSE](LICENSE). Bez zależności zewnętrznych.
+MIT, `Copyright (c) 2026 NobleCode`, zob. [LICENSE](LICENSE). Strona nie ma zależności zewnętrznych;
+generator arkusza używa openpyxl (MIT), który nie trafia do `public/`.
