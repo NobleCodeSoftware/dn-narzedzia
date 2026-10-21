@@ -10,10 +10,11 @@
   --track: #e8e6e1;
   --ok: #2f6b3a;
   --p70: #8a6400;
-  --p85: #c25e00;
+  --p85: #a84f00;
   --p95: #b42318;
   --p100: #8a1c12;
   --danger-bg: #fde8e6;
+  --field-border: #767b84;
   --radius: 12px;
   --space: 16px;
   color-scheme: light;
@@ -36,6 +37,7 @@
     --p95: #ff8a7e;
     --p100: #ff9b91;
     --danger-bg: #3d1d1a;
+    --field-border: #7d828b;
     color-scheme: dark;
   }
 }
@@ -56,6 +58,7 @@
   --p95: #ff8a7e;
   --p100: #ff9b91;
   --danger-bg: #3d1d1a;
+  --field-border: #7d828b;
   color-scheme: dark;
 }
 
@@ -100,7 +103,7 @@ li { margin-bottom: 6px; }
 label { display: block; font-weight: 600; margin: 0 0 6px; }
 select, input {
   display: block; width: 100%; font: inherit; color: var(--text); background: var(--bg);
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 48px;
+  border: 1px solid var(--field-border); border-radius: 8px; padding: 10px 12px; min-height: 48px;
 }
 select { margin-bottom: 18px; }
 input[aria-invalid="true"] { border-color: var(--p95); }
@@ -119,7 +122,7 @@ button.glowny { width: 100%; margin-top: 18px; font-size: 1.06rem; }
 .arkusz .przycisk { width: 100%; margin-top: 4px; background: transparent; color: var(--accent); border-width: 2px; }
 .arkusz .przycisk:hover { background: var(--accent); color: var(--accent-text); }
 
-.wynik { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.wynik { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); scroll-margin: 16px 0 24px; }
 .wynik-procent { margin: 0 0 8px; line-height: 1; }
 #wynik-procent { font-size: 2.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .wynik-podpis { color: var(--muted); font-weight: 600; }
@@ -145,6 +148,7 @@ button.glowny { width: 100%; margin-top: 18px; font-size: 1.06rem; }
 .pasek-wypelnienie.poziom-85 { background: var(--p85); }
 .pasek-wypelnienie.poziom-95 { background: var(--p95); }
 .pasek-wypelnienie.poziom-100 { background: var(--p100); }
+#wynik-dalej { margin: 4px 0 0; font-weight: 600; }
 .blad { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--danger-bg); color: var(--text); border: 1px solid var(--p95); }
 .licznik > .podpowiedz:last-child { margin-top: 16px; }
 

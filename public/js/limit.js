@@ -4,7 +4,7 @@ import { opisProgu, klasaProgu, szczegolyWyniku, procentTekst } from './wspolne.
 const $ = (id) => document.getElementById(id);
 const pole = $('przychod');
 const wyborKwartalu = $('kwartal');
-let pokazany = false;
+const wynik = $('wynik');
 
 function ustawBiezacyKwartal() {
   const { rok, q } = kwartal(dataWarszawa());
@@ -12,27 +12,33 @@ function ustawBiezacyKwartal() {
   if ([...wyborKwartalu.options].some((o) => o.value === wartosc)) wyborKwartalu.value = wartosc;
 }
 
+function ukryjBlad() {
+  $('blad').hidden = true;
+  pole.removeAttribute('aria-invalid');
+}
+
 function pokazBlad(tekst) {
   $('blad').textContent = tekst;
   $('blad').hidden = false;
-  $('wynik').hidden = true;
+  wynik.hidden = true;
   pole.setAttribute('aria-invalid', 'true');
 }
 
-function licz() {
-  $('blad').hidden = true;
-  pole.removeAttribute('aria-invalid');
+/** Odczyt kwoty: { gr } albo { blad } albo { pusto: true }. */
+function odczytajKwote() {
   const tekst = pole.value.trim().replace(/\s*zł$/i, '');
-  if (tekst === '') { pokazBlad('Wpisz kwotę przychodu, np. 2500 albo 2500,50.'); return; }
-  let przychodGr;
+  if (tekst === '') return { pusto: true };
   try {
-    przychodGr = naGrosze(tekst, 'przychód');
+    const gr = naGrosze(tekst, 'przychód');
+    return gr < 0n ? { blad: 'Kwota nie może być ujemna.' } : { gr };
   } catch (e) {
     if (!(e instanceof BladDanych)) throw e;
-    pokazBlad('Wpisz kwotę samymi cyframi, np. 2500 albo 2500,50.');
-    return;
+    return { blad: 'Wpisz kwotę samymi cyframi, np. 2500 albo 2500,50.' };
   }
-  if (przychodGr < 0n) { pokazBlad('Kwota nie może być ujemna.'); return; }
+}
+
+function pokazWynik(przychodGr) {
+  ukryjBlad();
   const [rok, q] = wyborKwartalu.value.split('-');
   const s = statusLimitu(przychodGr, limitDlaRoku(rok));
   $('wynik-procent').textContent = procentTekst(s.procent);
@@ -41,12 +47,38 @@ function licz() {
   $('wynik-status').textContent = opisProgu(s);
   $('wynik-status').className = `status ${klasaProgu(s)}`;
   $('wynik-szczegoly').textContent = szczegolyWyniku(s, formatujZl, `${['I', 'II', 'III', 'IV'][q - 1]} kwartał ${rok}`);
-  $('wynik').hidden = false;
-  pokazany = true;
+  $('wynik-dalej').hidden = !s.przekroczony;
+  wynik.hidden = false;
 }
 
-$('limit-form').addEventListener('submit', (ev) => { ev.preventDefault(); licz(); });
-pole.addEventListener('input', () => { if (pokazany && pole.value.trim() !== '') licz(); });
-wyborKwartalu.addEventListener('change', () => { if (pokazany) licz(); });
+/** Po „Sprawdź limit”: chowa klawiaturę i przewija do wyniku, jeśli nie jest cały widoczny. */
+function przewinDoWyniku() {
+  pole.blur();
+  const ograniczRuch = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const r = wynik.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > window.innerHeight) {
+    wynik.scrollIntoView({ block: 'nearest', behavior: ograniczRuch ? 'auto' : 'smooth' });
+  }
+}
+
+// Przycisk albo Enter: pełne sprawdzenie z komunikatem błędu.
+$('limit-form').addEventListener('submit', (ev) => {
+  ev.preventDefault();
+  const k = odczytajKwote();
+  if (k.pusto) { pokazBlad('Wpisz kwotę sprzedaży, np. 2500 albo 2500,50.'); return; }
+  if (k.blad) { pokazBlad(k.blad); return; }
+  pokazWynik(k.gr);
+  przewinDoWyniku();
+});
+
+// Na bieżąco przy wpisywaniu: wynik dla poprawnej kwoty; puste pole chowa wynik bez komunikatu;
+// niedokończony wpis (np. „12,”) nie zmienia ekranu, żeby nic nie migało.
+function naBiezaco() {
+  const k = odczytajKwote();
+  if (k.pusto) { ukryjBlad(); wynik.hidden = true; return; }
+  if (k.gr !== undefined) pokazWynik(k.gr);
+}
+pole.addEventListener('input', naBiezaco);
+wyborKwartalu.addEventListener('change', naBiezaco);
 
 ustawBiezacyKwartal();

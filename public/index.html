@@ -15,12 +15,12 @@
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/" aria-current="page">Limit działalności nierejestrowanej</a>
+      <a class="brand" href="/" aria-current="page">Licznik limitu</a>
     </div>
   </header>
   <main class="wrap">
-    <h1>Limit działalności nierejestrowanej 2026 i 2027</h1>
-    <p class="lead">Wpisz, ile zarobiłeś w kwartale. Zobaczysz, jaką część limitu już wykorzystałeś.</p>
+    <h1>Limit działalności nierejestrowanej 2026&nbsp;i&nbsp;2027</h1>
+    <p class="lead">Limit na kwartał to <strong>10&nbsp;813,50&nbsp;zł</strong> w 2026&nbsp;r. i&nbsp;<strong>11&nbsp;137,50&nbsp;zł</strong> w 2027&nbsp;r. Wpisz sprzedaż z kwartału, a zobaczysz, ile limitu już wykorzystałeś.</p>
 
     <section class="card licznik" aria-labelledby="licznik-tytul">
       <h2 id="licznik-tytul" class="sr-only">Licznik limitu</h2>
@@ -42,7 +42,7 @@
           <input id="przychod" name="przychod" inputmode="decimal" autocomplete="off" placeholder="np. 2500,00" aria-describedby="przychod-podpowiedz">
           <span class="jednostka" aria-hidden="true">zł</span>
         </div>
-        <p id="przychod-podpowiedz" class="podpowiedz">Suma wszystkich wpływów ze sprzedaży w kwartale, w złotych.</p>
+        <p id="przychod-podpowiedz" class="podpowiedz">Suma sprzedaży w kwartale w złotych, także jeszcze niezapłaconej.</p>
 
         <button type="submit" class="glowny">Sprawdź limit</button>
       </form>
@@ -56,6 +56,7 @@
         <p class="skala" aria-hidden="true"><span>0%</span><span>70</span><span>85</span><span>100%</span></p>
         <p id="wynik-status" class="status"></p>
         <p id="wynik-szczegoly"></p>
+        <p id="wynik-dalej" hidden><a href="#przekroczenie">Co dalej po przekroczeniu limitu</a></p>
       </div>
       <p id="blad" class="blad" role="alert" hidden></p>
       <p class="podpowiedz">Liczy Twoja przeglądarka. Kwota nie jest nigdzie wysyłana ani zapisywana.</p>
@@ -89,23 +90,24 @@
         <a href="https://eli.gov.pl/eli/DU/2026/1213/ogl" rel="noopener noreferrer">Dz.U. 2026 poz. 1213</a> (płaca minimalna 2027).</p>
     </section>
 
-    <section aria-labelledby="przekroczenie-tytul">
+    <section id="przekroczenie" aria-labelledby="przekroczenie-tytul">
       <h2 id="przekroczenie-tytul">Gdy przekroczysz limit</h2>
-      <p>Według poradników administracji działalność przestaje być nierejestrowana. Wniosek o wpis do CEIDG
-        trzeba złożyć w ciągu 7 dni od dnia, w którym przekroczono limit.</p>
+      <p>Według poradników administracji działalność przestaje być nierejestrowana. Wniosek o wpis do rejestru firm CEIDG (Centralnej Ewidencji i Informacji
+        o Działalności Gospodarczej) trzeba złożyć w ciągu 7 dni od dnia, w którym przekroczono limit.</p>
       <p class="zrodla">Źródła: <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a>,
         <a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl: Działalność nierejestrowana</a>.</p>
     </section>
 
     <section id="ksef" aria-labelledby="ksef-tytul">
-      <h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej (DN)</h2>
+      <h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej</h2>
+      <p>KSeF (Krajowy System e-Faktur) to państwowy system do wystawiania i odbierania faktur.</p>
       <dl class="daty">
         <dt>Do 31 grudnia 2026</dt>
         <dd>Faktury dla firm można wystawiać poza KSeF, jeśli sprzedaż na takich fakturach nie przekracza 10&nbsp;000&nbsp;zł brutto w miesiącu.</dd>
         <dt>Od 1 stycznia 2027</dt>
-        <dd>Ten wyjątek się kończy. Faktury dla firm wystawia się w KSeF. Faktury dla osób prywatnych w KSeF są dobrowolne.</dd>
+        <dd>Ten wyjątek się kończy i faktury dla firm wystawia się w KSeF. Faktury dla osób prywatnych w KSeF są dobrowolne.</dd>
       </dl>
-      <p>Faktura w KSeF musi mieć NIP wystawcy, a w działalności nierejestrowanej identyfikatorem jest zwykle PESEL. Jeśli nie masz NIP, jak go uzyskać opisuje poradnik Ministerstwa Finansów: <a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl: Działalność nierejestrowana</a>.</p>
+      <p>Faktura w KSeF musi mieć NIP wystawcy, a w działalności nierejestrowanej identyfikatorem jest zwykle PESEL. Jak uzyskać NIP, opisuje poradnik Ministerstwa Finansów: <a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl: Działalność nierejestrowana</a>.</p>
       <p class="zrodla">Źródła (stan na 21.10.2026): <a href="https://ksef.podatki.gov.pl/ponizej-10-000-zl/" rel="noopener noreferrer">ksef.podatki.gov.pl: Poniżej 10 000 zł</a>,
         <a href="https://ksef.podatki.gov.pl/" rel="noopener noreferrer">ksef.podatki.gov.pl</a>,
         <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a> (aktualizacja 5.05.2026).</p>

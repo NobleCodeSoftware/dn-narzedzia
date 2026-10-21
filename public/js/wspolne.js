@@ -29,8 +29,7 @@ export function procentTekst(procent) {
 /** Zdanie z kwotami: ile zostało albo o ile przekroczono limit. */
 export function szczegolyWyniku(s, formatujZl, etykietaKwartalu) {
   if (s.przekroczony) {
-    return `Przychód jest o ${formatujZl(-s.pozostaloGr)} wyższy niż limit ${formatujZl(s.limitGr)} na ${etykietaKwartalu}. `
-      + 'Przeczytaj niżej, co mówią poradniki administracji o przekroczeniu limitu.';
+    return `Przychód jest o ${formatujZl(-s.pozostaloGr)} wyższy niż limit ${formatujZl(s.limitGr)} na ${etykietaKwartalu}.`;
   }
   return `Do limitu ${formatujZl(s.limitGr)} na ${etykietaKwartalu} zostało ${formatujZl(s.pozostaloGr)}.`;
 }

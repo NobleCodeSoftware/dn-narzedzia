@@ -37,10 +37,10 @@ test('bez webowej ewidencji i linków do usuniętych podstron', () => {
 
 test('strona główna: licznik, sekcja KSeF ze źródłami, jedna akcja „Pobierz arkusz”', () => {
   const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
-  assert.match(html, /<h1>Limit działalności nierejestrowanej 2026 i 2027<\/h1>/);
+  assert.match(html, /<h1>Limit działalności nierejestrowanej 2026&nbsp;i&nbsp;2027<\/h1>/);
   assert.match(html, /10&nbsp;813,50/);
   assert.match(html, /11&nbsp;137,50/);
-  assert.match(html, /<h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej \(DN\)<\/h2>/);
+  assert.match(html, /<h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej<\/h2>/);
   assert.match(html, /href="https:\/\/ksef\.podatki\.gov\.pl\//);
   assert.match(html, /href="https:\/\/www\.biznes\.gov\.pl\//);
   assert.equal([...html.matchAll(/<button\b/g)].length, 1, 'jeden przycisk w formularzu');
@@ -132,5 +132,54 @@ test('wykrywanie adresów e-mail: dopuszcza tylko adres kontaktowy', () => {
   for (const inny of ['jan.kowalski@example.com', 'prywatny@example.pl', 'Kontakt@NobleCode.PL', 'inny@noblecode.pl',
     'kontakt@noblecode.pl.evil.com', 'xkontakt@noblecode.pl', 'jan&#64;example.com', 'jan%40example.com']) {
     assert.ok(znajdz(`<p>${inny}</p>`).length, `nie wykryto: ${inny}`);
+  }
+});
+
+// Czytelność: krótkie akapity, rozwinięte skróty, link do sekcji o przekroczeniu, kontrast AA.
+test('strona główna: najwyżej 2 zdania w akapicie, skróty rozwinięte, kwota limitu pod tytułem', () => {
+  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const main = html.slice(html.indexOf('<main'), html.indexOf('</main>'));
+  for (const [, blok] of main.matchAll(/<(?:p|dd|li)\b[^>]*>([\s\S]*?)<\/(?:p|dd|li)>/g)) {
+    const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const zdania = 1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length;
+    assert.ok(zdania <= 2, `${zdania} zdania: ${tekst}`);
+  }
+  assert.match(html, /<h1>[^<]*2026&nbsp;i&nbsp;2027<\/h1>/);
+  const lead = /<p class="lead">([\s\S]*?)<\/p>/.exec(html)[1];
+  assert.match(lead, /10&nbsp;813,50/);
+  assert.match(lead, /11&nbsp;137,50/);
+  assert.match(main, /KSeF \(Krajowy System e-Faktur\)/);
+  assert.match(main, /CEIDG \(Centralnej Ewidencji i Informacji\s+o Działalności Gospodarczej\)/);
+  assert.match(main, /<section id="przekroczenie"/);
+  assert.match(main, /<a href="#przekroczenie">/);
+});
+
+test('regulamin: faza testowa tylko w pkt 8, opis kursu NBP', () => {
+  const reg = readFileSync(join(PUBLIC, 'regulamin/index.html'), 'utf8');
+  const pkt8 = reg.indexOf('<h2>8.');
+  assert.ok(pkt8 > 0);
+  for (const [m] of reg.matchAll(/fazie testowej/g)) assert.ok(reg.indexOf(m) > pkt8);
+  assert.ok([...reg.matchAll(/fazie testowej/g)].every((m) => m.index > pkt8), 'faza testowa poza pkt 8');
+  assert.match(reg, /sam wpisuje\s+kurs średni NBP/);
+});
+
+function luminancja(hex) {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+const kontrast = (a, b) => { const [x, y] = [luminancja(a), luminancja(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+
+test('CSS: kontrast progów ≥ 4,5:1 i obramowania pól ≥ 3:1 w obu motywach', () => {
+  const css = readFileSync(join(PUBLIC, 'css/style.css'), 'utf8');
+  const motyw = (blok) => Object.fromEntries([...blok.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
+  const jasny = motyw(css.slice(0, css.indexOf('@media (prefers-color-scheme: dark)')));
+  const ciemny = { ...jasny, ...motyw(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf('* {'))) };
+  for (const [nazwa, v] of [['jasny', jasny], ['ciemny', ciemny]]) {
+    for (const k of ['text', 'muted', 'accent', 'ok', 'p70', 'p85', 'p95', 'p100']) {
+      for (const tlo of ['surface', 'bg']) assert.ok(kontrast(v[k], v[tlo]) >= 4.5, `${nazwa}: --${k} na --${tlo} = ${kontrast(v[k], v[tlo]).toFixed(2)}`);
+    }
+    for (const tlo of ['surface', 'bg']) assert.ok(kontrast(v['field-border'], v[tlo]) >= 3, `${nazwa}: obramowanie pól na --${tlo}`);
+    for (const k of ['ok', 'p70', 'p85', 'p95', 'p100']) assert.ok(kontrast(v[k], v.track) >= 3, `${nazwa}: pasek --${k} na torze`);
   }
 });
