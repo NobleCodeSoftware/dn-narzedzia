@@ -47,7 +47,7 @@
         <button type="submit" class="glowny">Sprawdź limit</button>
       </form>
 
-      <div id="wynik" class="wynik" aria-live="polite" hidden>
+      <div id="wynik" class="wynik" hidden>
         <p class="wynik-procent"><span id="wynik-procent">0%</span> <span class="wynik-podpis">limitu</span></p>
         <div class="pasek" aria-hidden="true">
           <div class="pasek-wypelnienie" id="pasek"></div>
@@ -59,6 +59,7 @@
         <p id="wynik-dalej" hidden><a href="#przekroczenie">Co dalej po przekroczeniu limitu</a></p>
       </div>
       <p id="blad" class="blad" role="alert" hidden></p>
+      <p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"></p>
       <p class="podpowiedz">Liczy Twoja przeglądarka. Kwota nie jest nigdzie wysyłana ani zapisywana.</p>
     </section>
 

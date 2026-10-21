@@ -1,4 +1,6 @@
-// Teksty wyniku licznika, bez zależności od DOM (testowane w node:test).
+import { BladDanych, naGrosze } from './logic.js';
+
+// Teksty wyniku licznika i odczyt wpisu, bez zależności od DOM (testowane w node:test).
 // Informacja ogólna, bez wniosków indywidualnych.
 
 /** Krótki komunikat dla progu limitu (70/85/95/100%). */
@@ -32,4 +34,29 @@ export function szczegolyWyniku(s, formatujZl, etykietaKwartalu) {
     return `Przychód jest o ${formatujZl(-s.pozostaloGr)} wyższy niż limit ${formatujZl(s.limitGr)} na ${etykietaKwartalu}.`;
   }
   return `Do limitu ${formatujZl(s.limitGr)} na ${etykietaKwartalu} zostało ${formatujZl(s.pozostaloGr)}.`;
+}
+
+// Wpis w trakcie pisania: cyfry zakończone przecinkiem lub kropką (np. „5000,”).
+const RE_NIEDOKONCZONY = /^\d[\d\s\u00a0]*[.,]$/;
+
+/**
+ * Odczyt pola kwoty. Zwraca jeden ze stanów:
+ * { stan: 'pusto' } · { stan: 'niedokonczony' } · { stan: 'blad', blad } · { stan: 'ok', gr }.
+ */
+export function odczytajWpis(wartosc) {
+  const tekst = String(wartosc ?? '').trim().replace(/\s*zł$/i, '');
+  if (tekst === '') return { stan: 'pusto' };
+  if (RE_NIEDOKONCZONY.test(tekst)) return { stan: 'niedokonczony' };
+  try {
+    const gr = naGrosze(tekst, 'przychód');
+    return gr < 0n ? { stan: 'blad', blad: 'Kwota nie może być ujemna.' } : { stan: 'ok', gr };
+  } catch (e) {
+    if (!(e instanceof BladDanych)) throw e;
+    return { stan: 'blad', blad: 'Wpisz kwotę samymi cyframi, np. 2500 albo 2500,50.' };
+  }
+}
+
+/** Jedno zdanie dla czytnika ekranu: procent, status i kwoty. */
+export function ogloszenieWyniku(s, formatujZl, etykietaKwartalu) {
+  return `${procentTekst(s.procent)} limitu. ${opisProgu(s)} ${szczegolyWyniku(s, formatujZl, etykietaKwartalu)}`;
 }

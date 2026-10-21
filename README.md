@@ -11,7 +11,7 @@ To wersja testowa: strony mają `noindex` (zob. „Wdrożenie”).
 
 | Ścieżka | Co robi |
 |---|---|
-| `/` | „Limit działalności nierejestrowanej 2026 i 2027”: kwoty limitu na kwartał od razu pod tytułem; licznik (kwartał + sprzedaż w kwartale → procent limitu, progi 70/85/95/100%; wynik liczy się na bieżąco przy wpisywaniu, a po przekroczeniu prowadzi do sekcji o przekroczeniu), kwoty limitu ze źródłami (2026 = 10 813,50 zł = 225% × 4806 zł; 2027 = 11 137,50 zł = 225% × 4950 zł), ogólna informacja o przekroczeniu limitu (7 dni na wniosek do CEIDG), krótka sekcja „KSeF od 2027” z linkami do ksef.podatki.gov.pl i biznes.gov.pl |
+| `/` | „Limit działalności nierejestrowanej 2026 i 2027”: kwoty limitu na kwartał od razu pod tytułem; licznik (kwartał + sprzedaż w kwartale → procent limitu, progi 70/85/95/100%; wynik liczy się na bieżąco przy wpisywaniu, błędny wpis chowa wynik i oznacza pole, a po przekroczeniu wynik prowadzi do sekcji o przekroczeniu; czytnik ekranu dostaje jedno ogłoszenie wyniku po wysłaniu formularza albo po przerwie w pisaniu), kwoty limitu ze źródłami (2026 = 10 813,50 zł = 225% × 4806 zł; 2027 = 11 137,50 zł = 225% × 4950 zł), ogólna informacja o przekroczeniu limitu (7 dni na wniosek do CEIDG), krótka sekcja „KSeF od 2027” z linkami do ksef.podatki.gov.pl i biznes.gov.pl |
 | `/pobierz/arkusz-limit-dn.xlsx` | darmowy arkusz (Excel, LibreOffice, Arkusze Google; bez makr i połączeń z siecią): data, opis, kwota, waluta, kurs NBP, kwota w PLN, suma kwartału narastająco, % limitu i ostrzeżenia (formatowanie warunkowe 70/85/95/100%); zakładki „Podsumowanie” (kwartały 2026–2028), „Limity” (płaca minimalna na rok, do uzupełnienia na 2028+), „Instrukcja” (m.in. jak znaleźć kurs średni NBP z dnia roboczego przed sprzedażą) |
 | `/regulamin/`, `/prywatnosc/`, `/o-nas/` | regulamin, polityka prywatności oraz informacje o narzędziu, usługodawcy i udziale AI |
 | `_redirects` | stałe przekierowania 301 dawnych podstron (`/limit-…`, `/ksef-2027-…`, `/ewidencja-sprzedazy-…`) na `/` |
@@ -57,8 +57,8 @@ node --test            # Node 20+; bez zależności
 ```
 
 - `test/logic.test.js`: limit, progi, kwartały, strefa czasowa, kwoty.
-- `test/wspolne.test.js`: komunikaty progów i zdanie z kwotami.
-- `test/strony.test.js`: higiena stron: `noindex`, meta CSP zgodny z `_headers` (bez `connect-src`), stopka, brak skryptów, stylów i handlerów inline, brak zewnętrznych zasobów i adresów w JS, brak `document.cookie`/`innerHTML`/`localStorage`/`fetch`, brak odwołań do usuniętych stron, sekcja KSeF ≤ 150 słów, jedna akcja pobrania arkusza, arkusz bez makr i łączy, `_redirects` tylko stałe, w HTML jedyny adres e-mail to `kontakt@noblecode.pl`; czytelność strony głównej (najwyżej 2 zdania w akapicie, rozwinięte skróty KSeF i CEIDG, kwoty limitu pod tytułem), faza testowa w regulaminie tylko w pkt 8, kontrast kolorów progów ≥ 4,5:1 i obramowań pól ≥ 3:1 w jasnym i ciemnym motywie.
+- `test/wspolne.test.js`: komunikaty progów, zdanie z kwotami, odczyt wpisu (puste pole, wpis niedokończony, błąd, poprawna kwota) i tekst ogłoszenia dla czytnika ekranu.
+- `test/strony.test.js`: higiena stron: `noindex`, meta CSP zgodny z `_headers` (bez `connect-src`), stopka, brak skryptów, stylów i handlerów inline, brak zewnętrznych zasobów i adresów w JS, brak `document.cookie`/`innerHTML`/`localStorage`/`fetch`, brak odwołań do usuniętych stron, sekcja KSeF ≤ 150 słów, jedna akcja pobrania arkusza, arkusz bez makr i łączy, `_redirects` tylko stałe, w HTML jedyny adres e-mail to `kontakt@noblecode.pl`; czytelność strony głównej (najwyżej 2 zdania w akapicie, rozwinięte skróty KSeF i CEIDG, kwoty limitu pod tytułem), faza testowa w regulaminie tylko w pkt 8, kontrast kolorów progów ≥ 4,5:1 i obramowań pól ≥ 3:1 w jasnym i ciemnym motywie, wynik bez `aria-live` i jeden osobny region ogłoszeń.
 - Przed publikacją: `npm run check:publish` kończy się błędem, gdy w `public/` został placeholder `{{...}}` albo znacznik `[DO-UZUPEŁNIENIA…]` (miejsce w tekście do uzupełnienia).
 
 CI: `.github/workflows/ci.yml` uruchamia `node --test` na Node 20 i 22 (push do `main` i pull requesty).
@@ -73,7 +73,7 @@ public/                    gotowa strona (Cloudflare Pages, katalog wyjściowy)
   index.html               licznik, kwoty limitu, przekroczenie, KSeF
   css/style.css
   js/logic.js              logika licznika bez DOM: kwoty, kwartały, limit, progi
-  js/wspolne.js            teksty wyniku
+  js/wspolne.js            teksty wyniku i odczyt wpisu
   js/limit.js              widok licznika
   pobierz/arkusz-limit-dn.xlsx   arkusz do pobrania (generowany)
   regulamin/, prywatnosc/, o-nas/

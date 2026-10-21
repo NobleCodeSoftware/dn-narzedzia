@@ -158,7 +158,6 @@ test('regulamin: faza testowa tylko w pkt 8, opis kursu NBP', () => {
   const reg = readFileSync(join(PUBLIC, 'regulamin/index.html'), 'utf8');
   const pkt8 = reg.indexOf('<h2>8.');
   assert.ok(pkt8 > 0);
-  for (const [m] of reg.matchAll(/fazie testowej/g)) assert.ok(reg.indexOf(m) > pkt8);
   assert.ok([...reg.matchAll(/fazie testowej/g)].every((m) => m.index > pkt8), 'faza testowa poza pkt 8');
   assert.match(reg, /sam wpisuje\s+kurs średni NBP/);
 });
@@ -182,4 +181,11 @@ test('CSS: kontrast progów ≥ 4,5:1 i obramowania pól ≥ 3:1 w obu motywach'
     for (const tlo of ['surface', 'bg']) assert.ok(kontrast(v['field-border'], v[tlo]) >= 3, `${nazwa}: obramowanie pól na --${tlo}`);
     for (const k of ['ok', 'p70', 'p85', 'p95', 'p100']) assert.ok(kontrast(v[k], v.track) >= 3, `${nazwa}: pasek --${k} na torze`);
   }
+});
+
+test('strona główna: wynik bez aria-live, ogłoszenia tylko przez osobny region', () => {
+  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  assert.match(html, /<div id="wynik" class="wynik" hidden>/);
+  assert.equal([...html.matchAll(/aria-live=/g)].length, 1, 'jeden region aria-live');
+  assert.match(html, /<p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"><\/p>/);
 });
