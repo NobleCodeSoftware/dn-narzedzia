@@ -24,7 +24,7 @@ const cspNaglowek = /Content-Security-Policy: (.+)/.exec(naglowki)[1].trim();
 
 test('są wszystkie strony', () => {
   const sciezki = HTML.map((p) => relative(PUBLIC, p).replaceAll('\\', '/')).sort();
-  assert.deepEqual(sciezki, ['faktura/index.html', 'index.html', 'o-nas/index.html', 'prywatnosc/index.html', 'regulamin/index.html']);
+  assert.deepEqual(sciezki, ['404.html', 'faktura/index.html', 'index.html', 'o-nas/index.html', 'prywatnosc/index.html', 'regulamin/index.html']);
 });
 
 // Ewidencja działa w przeglądarce, ale pamięć przeglądarki ma tylko magazyn.js, a zapytania sieciowe tylko widok ewidencji
@@ -97,11 +97,15 @@ for (const plik of HTML) {
     assert.equal(`${csp[1]}; frame-ancestors 'none'`, cspNaglowek, 'meta CSP różni się od _headers');
     assert.ok(!/unsafe-inline|unsafe-eval|\*/.test(csp[1]), 'CSP nie może zawierać unsafe-* ani *');
     assert.ok(html.includes(STOPKA), 'brak stopki');
-    assert.ok(!/<script(?![^>]*\ssrc=")[^>]*>/.test(html), 'skrypt inline');
+    // Jedyny dopuszczalny blok bez src to dane strukturalne (application/ld+json): przeglądarka go nie wykonuje.
+    for (const [tag] of html.matchAll(/<script(?![^>]*\ssrc=")[^>]*>/g)) assert.equal(tag, '<script type="application/ld+json">', 'skrypt inline');
     assert.ok(!/\sstyle="/.test(html) && !/<style/.test(html), 'styl inline');
     assert.ok(!/\son[a-z]+="/.test(html), 'obsługa zdarzeń inline');
     for (const [, src] of html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)) assert.match(src, /^\/js\//);
-    for (const [, href] of html.matchAll(/<link[^>]*\shref="([^"]+)"/g)) assert.match(href, /^\//);
+    for (const [tag, href] of html.matchAll(/<link[^>]*\shref="([^"]+)"/g)) {
+      if (/rel="canonical"/.test(tag)) assert.match(href, /^https:\/\/dn\.noblecode\.pl\//);
+      else assert.match(href, /^\//);
+    }
     assert.match(html, /<html lang="pl">/);
     assert.match(html, /<meta name="viewport"/);
   });
@@ -427,4 +431,112 @@ test('błąd znika przy zmianie pola, fokus po oknie limitu na cenie, utratę pr
   assert.match(kod, /async function cofnijUtrate\(\) \{[\s\S]*?await zapytaj\([\s\S]*?stan\.utrataOd = null;/);
   const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
   assert.match(html, /<button type="button" id="cofnij-utrate" class="drugorzedny maly" hidden>To była pomyłka: cofnij<\/button>/);
+});
+
+// ---------------------------------------------------------------- metadane wyszukiwarek i pliki do włączenia indeksowania
+
+const BAZA = 'https://dn.noblecode.pl';
+const METADANE = {
+  'index.html': ['/', 'Ewidencja sprzedaży i limit działalności nierejestrowanej 2026'],
+  'faktura/index.html': ['/faktura/', 'Faktura bez VAT w działalności nierejestrowanej – online, PDF'],
+  'o-nas/index.html': ['/o-nas/', 'O narzędziach i usługodawcy – Narzędziownik DN'],
+  'regulamin/index.html': ['/regulamin/', 'Regulamin – Narzędziownik DN'],
+  'prywatnosc/index.html': ['/prywatnosc/', 'Polityka prywatności – Narzędziownik DN'],
+};
+const meta = (html, wzor) => { const m = wzor.exec(html); return m ? m[1] : null; };
+const odkoduj = (t) => t.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+const jsonLd = (html) => [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+
+test('metadane wyszukiwarek: tytuł, opis, canonical i Open Graph na każdej stronie', () => {
+  // 404.html nie ma adresu kanonicznego ani opisu: sprawdza ją osobny test.
+  assert.deepEqual(Object.keys(METADANE).sort(), HTML.map((p) => relative(PUBLIC, p).replaceAll('\\', '/')).filter((p) => p !== '404.html').sort());
+  for (const [plik, [sciezka, tytul]] of Object.entries(METADANE)) {
+    const html = readFileSync(join(PUBLIC, plik), 'utf8');
+    const t = meta(html, /<title>([^<]*)<\/title>/);
+    assert.equal(t, tytul, plik);
+    assert.ok(t.length <= 65, `${plik}: tytuł ma ${t.length} znaków`);
+    const opis = meta(html, /<meta name="description" content="([^"]*)">/);
+    assert.ok(opis && opis.length >= 70 && opis.length <= 160, `${plik}: opis ma ${opis?.length} znaków`);
+    assert.equal([...html.matchAll(/<link rel="canonical"/g)].length, 1, `${plik}: jeden canonical`);
+    const kanon = meta(html, /<link rel="canonical" href="([^"]+)">/);
+    assert.equal(kanon, BAZA + sciezka, plik);
+    assert.equal(meta(html, /<meta property="og:url" content="([^"]+)">/), kanon, `${plik}: og:url = canonical`);
+    assert.equal(odkoduj(meta(html, /<meta property="og:title" content="([^"]+)">/)), t, `${plik}: og:title = title`);
+    assert.equal(meta(html, /<meta property="og:description" content="([^"]+)">/), opis, `${plik}: og:description = description`);
+    assert.equal(meta(html, /<meta property="og:type" content="([^"]+)">/), 'website');
+    assert.equal(meta(html, /<meta property="og:locale" content="([^"]+)">/), 'pl_PL');
+    assert.equal(meta(html, /<meta property="og:site_name" content="([^"]+)">/), 'Narzędziownik DN');
+    assert.ok(!/og:image|twitter:/.test(html), `${plik}: bez og:image i twitter:*`);
+    assert.ok(html.indexOf('rel="canonical"') < html.indexOf('rel="stylesheet"'), `${plik}: canonical przed CSS`);
+    assert.match(html, /<meta name="robots" content="noindex, nofollow">/, `${plik}: noindex na stronie`);
+  }
+});
+
+test('dane strukturalne: JSON-LD tylko na stronie głównej i stronie faktury, poprawny JSON, bez ocen i recenzji', () => {
+  for (const plik of Object.keys(METADANE)) {
+    const bloki = jsonLd(readFileSync(join(PUBLIC, plik), 'utf8'));
+    assert.equal(bloki.length, ['index.html', 'faktura/index.html'].includes(plik) ? 1 : 0, plik);
+    for (const b of bloki) {
+      const dane = JSON.parse(b);
+      assert.equal(dane['@context'], 'https://schema.org');
+      assert.ok(!/aggregateRating|"review"|"author"|"publisher"/.test(b), `${plik}: pola pominięte celowo`);
+      const wezly = dane['@graph'] ?? [dane];
+      for (const w of wezly) {
+        assert.ok(w.url.startsWith(BAZA), w.url);
+        if (w['@type'] === 'WebApplication') {
+          assert.equal(w.isAccessibleForFree, true);
+          assert.deepEqual(w.offers, { '@type': 'Offer', price: '0', priceCurrency: 'PLN' });
+          assert.deepEqual(w.isPartOf, { '@id': `${BAZA}/#witryna` });
+          assert.ok(Array.isArray(w.featureList) && w.featureList.length >= 3);
+        }
+      }
+    }
+  }
+  const glowna = JSON.parse(jsonLd(readFileSync(join(PUBLIC, 'index.html'), 'utf8'))[0]);
+  const witryna = glowna['@graph'].find((w) => w['@type'] === 'WebSite');
+  assert.deepEqual(witryna, { '@type': 'WebSite', '@id': `${BAZA}/#witryna`, url: `${BAZA}/`, name: 'Narzędziownik DN', alternateName: 'dn.noblecode.pl', inLanguage: 'pl-PL' });
+  assert.ok(glowna['@graph'].some((w) => w['@type'] === 'WebApplication' && w.url === `${BAZA}/`));
+  const faktura = JSON.parse(jsonLd(readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8'))[0]);
+  assert.equal(faktura['@type'], 'WebApplication');
+  assert.equal(faktura.url, `${BAZA}/faktura/`);
+});
+
+test('pliki do włączenia indeksowania (indeksowanie/): mapa z adresami kanonicznymi, robots z mapą, nagłówki bez noindex na stronach', () => {
+  const INDEKSOWANIE = fileURLToPath(new URL('../indeksowanie/', import.meta.url));
+  const mapa = readFileSync(join(INDEKSOWANIE, 'sitemap.xml'), 'utf8');
+  const loc = [...mapa.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).sort();
+  assert.deepEqual(loc, Object.values(METADANE).map(([s]) => BAZA + s).sort(), 'każdy adres w mapie ma stronę z takim canonical');
+  for (const [, d] of mapa.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)) assert.match(d, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(readFileSync(join(INDEKSOWANIE, 'robots.txt'), 'utf8'), /^Sitemap: https:\/\/dn\.noblecode\.pl\/sitemap\.xml$/m);
+  const h = readFileSync(join(INDEKSOWANIE, '_headers'), 'utf8');
+  const bloki = h.split(/\n(?=\S)/).filter((b) => !b.startsWith('#'));
+  const blok = (sciezka) => bloki.find((b) => b.split('\n')[0].trim() === sciezka) ?? '';
+  assert.ok(!/X-Robots-Tag/.test(blok('/*')), 'reguła /* bez X-Robots-Tag');
+  assert.match(blok('/*'), /Content-Security-Policy: /);
+  assert.equal(/Content-Security-Policy: (.+)/.exec(blok('/*'))[1].trim(), cspNaglowek, 'ten sam CSP co w public/_headers');
+  assert.match(blok('/pobierz/*'), /X-Robots-Tag: noindex/);
+  assert.match(blok('https://:project.pages.dev/*'), /X-Robots-Tag: noindex/);
+  assert.match(blok('https://:version.:project.pages.dev/*'), /X-Robots-Tag: noindex/);
+  // pliki z indeksowanie/ nie są publikowane
+  assert.throws(() => readFileSync(join(PUBLIC, 'sitemap.xml')));
+  assert.ok(!/Sitemap:/.test(readFileSync(join(PUBLIC, 'robots.txt'), 'utf8')));
+});
+
+// ---------------------------------------------------------------- strona 404
+
+test('404.html: noindex, ten sam CSP, nawigacja i stopka, link do ewidencji, bez canonical, Open Graph i JSON-LD', () => {
+  const html = readFileSync(join(PUBLIC, '404.html'), 'utf8');
+  // Bez 404.html Cloudflare Pages zwraca na każdy nieistniejący adres stronę główną z kodem 200.
+  assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
+  assert.equal(`${/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html)[1]}; frame-ancestors 'none'`, cspNaglowek);
+  assert.match(html, /<title>Nie ma takiej strony – Narzędziownik DN<\/title>/);
+  assert.match(html, /<h1>Nie ma takiej strony<\/h1>/);
+  assert.match(tekstMain(html), /<a class="przycisk" href="\/">Przejdź do ewidencji<\/a>/);
+  assert.ok(!/rel="canonical"|og:|application\/ld\+json|<script/.test(html), 'bez canonical, Open Graph, JSON-LD i skryptów');
+  for (const [, blok] of tekstMain(html).matchAll(/<(?:p|dd|li)\b[^>]*>([\s\S]*?)<\/(?:p|dd|li)>/g)) {
+    const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    assert.ok(1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length <= 2, tekst);
+  }
+  const instrukcja = readFileSync(fileURLToPath(new URL('../indeksowanie/README.md', import.meta.url)), 'utf8');
+  assert.match(instrukcja, /curl -I https:\/\/dn\.noblecode\.pl\/nie-istnieje/);
 });
