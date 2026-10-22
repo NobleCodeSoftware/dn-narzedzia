@@ -189,3 +189,15 @@ test('strona główna: wynik bez aria-live, ogłoszenia tylko przez osobny regio
   assert.equal([...html.matchAll(/aria-live=/g)].length, 1, 'jeden region aria-live');
   assert.match(html, /<p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"><\/p>/);
 });
+
+// Oznaczenie usługodawcy: ta sama nazwa w stopce każdej strony, w regulaminie i w polityce prywatności.
+test('usługodawca: ta sama nazwa w stopce, w regulaminie i w polityce prywatności', () => {
+  for (const plik of HTML) {
+    assert.ok(readFileSync(plik, 'utf8').includes('Usługodawca: NobleCode Krzysztof Mizgała · '), `${plik}: stopka bez nazwy usługodawcy`);
+  }
+  for (const s of ['regulamin', 'prywatnosc']) {
+    const t = readFileSync(join(PUBLIC, `${s}/index.html`), 'utf8');
+    assert.match(t, /Wersja:? 0\.3, obowiązuje od dnia publikacji na stronie\./, `${s}: wersja 0.3`);
+    assert.ok(t.includes('NobleCode Krzysztof Mizgała, e-mail:'), `${s}: nazwa w treści`);
+  }
+});
