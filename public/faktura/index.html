@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Faktura bez VAT (zwolnienie) w działalności nierejestrowanej</title>
+  <meta name="description" content="Faktura bez VAT dla sprzedawcy zwolnionego z VAT: podstawa zwolnienia, kolejny numer, kwota słownie, PDF z przeglądarki. Pilnuje limitu 10 000 zł faktur dla firm poza KSeF w 2026 r. Dane zostają u Ciebie.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/druk.css" media="print">
+  <script type="module" src="/js/faktura-widok.js"></script>
+</head>
+<body>
+  <header class="site">
+    <div class="wrap szeroki">
+      <a class="brand" href="/">Narzędziownik DN</a>
+      <nav class="nawigacja" aria-label="Narzędzia">
+        <a href="/">Ewidencja</a>
+        <a href="/faktura/" aria-current="page">Faktura</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap szeroki">
+    <h1>Faktura bez VAT (zwolnienie)</h1>
+    <p class="lead">Wystaw fakturę, gdy klient o nią poprosi, i zapisz ją jako PDF. Strona nada kolejny numer, wpisze podstawę zwolnienia i pilnuje limitu faktur dla firm poza KSeF.</p>
+
+    <section class="card" id="formularz" aria-labelledby="form-tytul">
+      <h2 id="form-tytul" class="sr-only">Dane faktury</h2>
+      <form id="faktura-form" novalidate>
+        <fieldset class="grupa" id="rodzaj">
+          <legend>Kto kupuje</legend>
+          <div class="przelacznik">
+            <input type="radio" name="rodzaj" id="rodzaj-konsument" value="konsument" checked>
+            <label for="rodzaj-konsument">Osoba prywatna</label>
+          </div>
+          <div class="przelacznik">
+            <input type="radio" name="rodzaj" id="rodzaj-firma" value="firma">
+            <label for="rodzaj-firma">Firma lub instytucja z Polski (ma NIP)</label>
+          </div>
+          <p id="ksef-skrot" class="podpowiedz status-tekst"></p>
+        </fieldset>
+
+        <div class="pole" id="pole-zapisani" hidden>
+          <label for="f-zapisani">Zapisany klient <span class="opcjonalne">(nieobowiązkowe)</span></label>
+          <select id="f-zapisani"></select>
+        </div>
+        <div class="siatka">
+          <div class="pole">
+            <label for="f-nabywca-nazwa" id="etykieta-nabywca">Imię i nazwisko klienta</label>
+            <input id="f-nabywca-nazwa" maxlength="160" autocomplete="off">
+          </div>
+          <div class="pole" id="pole-nabywca-nip" hidden>
+            <label for="f-nabywca-nip">NIP klienta</label>
+            <input id="f-nabywca-nip" inputmode="text" maxlength="20" autocomplete="off" placeholder="np. 123-456-32-18" aria-describedby="nip-info">
+            <p id="nip-info" class="podpowiedz">Sprawdzamy cyfrę kontrolną NIP.</p>
+          </div>
+        </div>
+        <div class="pole">
+          <label for="f-nabywca-adres">Adres klienta</label>
+          <input id="f-nabywca-adres" maxlength="200" autocomplete="off" placeholder="np. ul. Polna 3, 00-001 Warszawa">
+        </div>
+
+        <h3>Co sprzedajesz</h3>
+        <ol id="pozycje" class="pozycje"></ol>
+        <button type="button" id="dodaj-pozycje" class="drugorzedny maly">Dodaj pozycję</button>
+
+        <h3>Daty i numer</h3>
+        <div class="siatka trzy">
+          <div class="pole">
+            <label for="f-data-sprzedazy">Data sprzedaży</label>
+            <input id="f-data-sprzedazy" type="date" min="2020-01-01" max="2035-12-31">
+          </div>
+          <div class="pole">
+            <p class="etykieta">Data wystawienia</p>
+            <p id="data-wystawienia" class="wartosc-pola"></p>
+          </div>
+          <div class="pole">
+            <label for="f-numer">Numer faktury</label>
+            <input id="f-numer" maxlength="12" autocomplete="off" aria-describedby="numer-info">
+            <p id="numer-info" class="podpowiedz"></p>
+          </div>
+        </div>
+        <div class="pole">
+          <label for="f-data-zadania">Kiedy klient poprosił o fakturę <span class="opcjonalne">(nieobowiązkowe)</span></label>
+          <input id="f-data-zadania" type="date" min="2020-01-01" max="2035-12-31" aria-describedby="termin-info">
+          <p id="termin-info" class="podpowiedz"></p>
+        </div>
+
+        <details class="metoda" id="twoje-dane">
+          <summary>Twoje dane i podstawa zwolnienia</summary>
+          <div class="siatka">
+            <div class="pole">
+              <label for="f-sprzedawca-nazwa">Twoje imię i nazwisko</label>
+              <input id="f-sprzedawca-nazwa" maxlength="120" autocomplete="name">
+            </div>
+            <div class="pole">
+              <label for="f-sprzedawca-nip">Twój NIP albo PESEL</label>
+              <input id="f-sprzedawca-nip" maxlength="16" inputmode="numeric" autocomplete="off" aria-describedby="id-info">
+              <p id="id-info" class="podpowiedz">W działalności nierejestrowanej wpisz PESEL. NIP wpisz tylko wtedy, gdy jesteś zarejestrowany do VAT albo masz kasę fiskalną.</p>
+            </div>
+          </div>
+          <div class="pole">
+            <label for="f-sprzedawca-adres">Twój adres</label>
+            <input id="f-sprzedawca-adres" maxlength="200" autocomplete="street-address" aria-describedby="adres-info">
+            <p id="adres-info" class="podpowiedz">Ustawa o VAT wymaga na fakturze adresu sprzedawcy i nabywcy (art. 106e ust. 1 pkt 3).</p>
+          </div>
+          <div class="pole">
+            <label for="f-podstawa">Podstawa zwolnienia z VAT</label>
+            <select id="f-podstawa">
+              <option value="art113-1">art. 113 ust. 1 (do 240 000 zł)</option>
+              <option value="art113-9">art. 113 ust. 9 (start w trakcie roku)</option>
+              <option value="inna">inna podstawa</option>
+            </select>
+          </div>
+          <div class="pole" id="pole-podstawa-tekst" hidden>
+            <label for="f-podstawa-tekst">Twoja podstawa zwolnienia</label>
+            <input id="f-podstawa-tekst" maxlength="200" autocomplete="off" placeholder="np. art. 43 ust. 1 pkt 29 lit. c ustawy o VAT">
+          </div>
+          <div class="pole">
+            <label for="f-platnosc">Zapłata <span class="opcjonalne">(nieobowiązkowe)</span></label>
+            <input id="f-platnosc" maxlength="200" autocomplete="off" placeholder="np. przelew do 5.11.2026, nr konta …">
+          </div>
+        </details>
+
+        <div id="podsumowanie" class="podsumowanie">
+          <p class="wynik-procent"><span id="razem">0,00 zł</span> <span class="wynik-podpis">do zapłaty</span></p>
+          <p id="razem-slownie" class="muted"></p>
+          <div id="ksef-ok" class="ramka">
+            <p id="ksef-ok-tekst"></p>
+          </div>
+          <div id="ksef-blokada" class="ramka alarm" hidden>
+            <p id="ksef-blokada-tekst" class="ramka-tytul"></p>
+            <p>Wystawisz ją bezpłatnie w aplikacji Ministerstwa Finansów: <a href="https://ksef.podatki.gov.pl/" rel="noopener noreferrer">ksef.podatki.gov.pl</a>. Faktura w KSeF wymaga Twojego NIP.</p>
+          </div>
+          <p id="ksef-pamiec" class="podpowiedz ostrzezenie-tekst" hidden>Bez pamięci przeglądarki licznik zna tylko faktury z tej wizyty. Wcześniejsze faktury dla firm wpisz w polu „Faktury dla firm wystawione gdzie indziej”.</p>
+          <details class="metoda" id="inne-faktury">
+            <summary>Faktury dla firm wystawione gdzie indziej</summary>
+            <div class="pole">
+              <label for="f-inne">Suma innych faktur dla firm poza KSeF w miesiącu wystawienia <span class="opcjonalne">(zł)</span></label>
+              <input id="f-inne" inputmode="decimal" autocomplete="off" placeholder="np. 1200">
+            </div>
+            <div class="przelacznik">
+              <input type="checkbox" id="f-przekroczony">
+              <label for="f-przekroczony">W 2026 r. już przekroczyłem limit 10 000 zł w miesiącu</label>
+            </div>
+            <button type="button" id="cofnij-utrate" class="drugorzedny maly" hidden>To była pomyłka: cofnij</button>
+          </details>
+        </div>
+
+        <div class="przelacznik" id="pole-ewidencja">
+          <input type="checkbox" id="f-ewidencja" checked aria-describedby="ewidencja-info">
+          <label for="f-ewidencja">Dodaj tę sprzedaż do ewidencji</label>
+        </div>
+        <p id="ewidencja-info" class="podpowiedz">Jeśli sprzedaż z tą datą i kwotą już tam jest, dopiszemy do niej tylko numer faktury.</p>
+
+        <p id="form-blad" class="blad" hidden></p>
+        <div class="przyciski">
+          <button type="submit" class="glowny" id="wystaw">Wystaw i drukuj fakturę</button>
+        </div>
+        <p id="potwierdzenie" class="potwierdzenie" hidden></p>
+      </form>
+    </section>
+
+    <section id="wystawione" aria-labelledby="wystawione-tytul">
+      <h2 id="wystawione-tytul">Wystawione faktury</h2>
+      <p id="wystawione-pusto" class="muted">Tu pojawią się faktury, które wystawisz.</p>
+      <ol id="lista-faktur" class="wpisy"></ol>
+      <div class="przelacznik">
+        <input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">
+        <label for="pamietaj">Pamiętaj wpisy w tej przeglądarce</label>
+      </div>
+      <p id="pamietaj-info" class="podpowiedz">To samo ustawienie co w ewidencji: obejmuje też faktury i dane klientów. Usunąć wszystko możesz przyciskiem „Wyczyść dane” w <a href="/#pliki">ewidencji</a>.</p>
+    </section>
+
+    <section id="zasady" aria-labelledby="zasady-tytul">
+      <h2 id="zasady-tytul">Kiedy faktura, a kiedy KSeF</h2>
+      <p>Fakturę wystawiasz na prośbę klienta, osoby prywatnej albo firmy, zgłoszoną do 3 miesięcy od końca miesiąca sprzedaży (art. 106b ust. 3 pkt 2).</p>
+      <dl class="daty">
+        <dt>Osoba prywatna</dt>
+        <dd>Faktura może być poza KSeF, także od 2027 r.</dd>
+        <dt>Firma, do 31 grudnia 2026</dt>
+        <dd>Poza KSeF, dopóki faktury dla firm wystawione w miesiącu mają razem najwyżej 10&nbsp;000&nbsp;zł brutto (liczy się data wystawienia). Fakturę, z którą suma przekroczy tę kwotę, i każdą kolejną fakturę dla firmy do końca 2026 r. wystawiasz w KSeF.</dd>
+        <dt>Firma, od 1 stycznia 2027</dt>
+        <dd>Każdą fakturę wystawiasz w KSeF, więc ta strona jej nie przygotuje.</dd>
+      </dl>
+      <p>Fakturę wystawiasz do 15. dnia miesiąca po sprzedaży, a gdy prośba przyszła później, do 15 dni od prośby. Faktura bez VAT nie ma stawki ani kwoty podatku, ale musi mieć podstawę zwolnienia.</p>
+      <p class="zrodla">Źródła (sprawdzone 22.10.2026): <a href="https://api.sejm.gov.pl/eli/acts/DU/2026/1263/text.pdf" rel="noopener noreferrer">ustawa o VAT, Dz.U. 2026 poz. 1263</a> (art. 106b, 106e, 106ga, 106i, 113, 145m),
+        <a href="https://ksef.podatki.gov.pl/ponizej-10-000-zl/" rel="noopener noreferrer">ksef.podatki.gov.pl: Poniżej 10 000 zł</a>,
+        <a href="https://ksef.podatki.gov.pl/konsumenci-i-osoby-fizyczne/" rel="noopener noreferrer">ksef.podatki.gov.pl: Konsumenci</a>,
+        <a href="https://api.sejm.gov.pl/eli/acts/DU/2026/151/text.pdf" rel="noopener noreferrer">ustawa o zasadach ewidencji i identyfikacji podatników, Dz.U. 2026 poz. 151</a> (art. 3),
+        <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a>.</p>
+    </section>
+
+    <p class="uwaga">Strona składa fakturę z Twoich danych i nie ocenia Twojej sytuacji. W sprawach indywidualnych zapytaj Krajową Informację Skarbową.</p>
+
+    <p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+  </main>
+
+  <section id="wydruk" class="tylko-druk" aria-label="Wydruk faktury"></section>
+
+  <dialog id="dialog" aria-labelledby="dialog-tytul" aria-describedby="dialog-tekst">
+    <h2 id="dialog-tytul"></h2>
+    <div id="dialog-tekst"></div>
+    <div class="przyciski" id="dialog-przyciski"></div>
+  </dialog>
+
+  <footer class="site">
+    <div class="wrap szeroki">
+      <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
+      <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
+      <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O nas</a></p>
+    </div>
+  </footer>
+</body>
+</html>

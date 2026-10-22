@@ -17,3 +17,16 @@ header.site, footer.site, main, dialog { display: none !important; }
 #wydruk tr.suma-kwartalu td { font-weight: 700; background: #f4f4f4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 #wydruk .druk-uwaga { font-weight: 700; margin-top: 8pt; }
 #wydruk .druk-stopka { margin-top: 10pt; font-size: 8pt; color: #333; }
+
+/* Wydruk faktury (strona /faktura/, przycisk „Wystaw i drukuj fakturę”). */
+#wydruk .druk-faktura { font-size: 10.5pt; }
+#wydruk .druk-naglowek { display: flex; justify-content: space-between; align-items: flex-start; gap: 12pt; border-bottom: 1pt solid #000; padding-bottom: 6pt; }
+#wydruk .druk-podtytul { font-weight: 700; }
+#wydruk .druk-daty { display: grid; grid-template-columns: auto auto; gap: 2pt 8pt; margin: 0; }
+#wydruk .druk-daty dt { color: #333; }
+#wydruk .druk-daty dd { margin: 0; font-weight: 700; text-align: right; }
+#wydruk .druk-strony { display: grid; grid-template-columns: 1fr 1fr; gap: 12pt; margin: 10pt 0 4pt; }
+#wydruk .druk-strona h2 { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.04em; color: #333; margin: 0 0 3pt; }
+#wydruk .druk-strona p { margin: 0 0 2pt; }
+#wydruk .druk-razem { font-size: 13pt; font-weight: 700; margin-top: 10pt; text-align: right; }
+#wydruk .druk-zwolnienie { margin-top: 8pt; font-weight: 700; }

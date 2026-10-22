@@ -27,8 +27,10 @@ skryptu, w arkuszu `public/pobierz/` makra, łącza zewnętrzne lub formuły ł�
 Poza zakresem: podatności Cloudflare, przeglądarek i programów arkuszowych (zgłoś je dostawcy).
 
 ## Model bezpieczeństwa (skrót)
-- Strona statyczna, bez backendu, kont, ciasteczek i pamięci przeglądarki. Kwota z licznika zostaje w przeglądarce.
-- CSP: `default-src 'none'`, skrypty i style tylko z tej samej domeny, bez połączeń z innymi serwerami.
+- Strona statyczna, bez backendu, kont i ciasteczek. Wpisy ewidencji, faktury i dane klientów zostają w pamięci tej
+  przeglądarki (`localStorage`, dostęp tylko w `magazyn.js`, z przełącznikiem i „Wyczyść dane”).
+- CSP: `default-src 'none'`, skrypty i style tylko z tej samej domeny; połączenia tylko z tą domeną (wzór arkusza)
+  i z api.nbp.pl (kurs średni NBP).
 - Treść trafia do strony wyłącznie przez `textContent` (bez `innerHTML`).
 - Arkusz XLSX generuje `scripts/arkusz.py` i sprawdza go (`--sprawdz`): bez makr, łączy zewnętrznych i `HYPERLINK`.
 
