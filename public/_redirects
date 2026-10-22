@@ -1,7 +1,10 @@
-# Stałe przekierowania usuniętych podstron na jedną stronę główną. Tylko stałe cele w tej domenie.
+# Stałe przekierowania usuniętych podstron na stronę główną. Tylko stałe cele w tej domenie.
+# /ewidencja/ to stary adres podstrony ewidencji, która jest teraz stroną główną (katalogu nie ma, więc bez pętli).
 /limit-dzialalnosc-nierejestrowana/ / 301
 /limit-dzialalnosc-nierejestrowana / 301
 /ksef-2027-dzialalnosc-nierejestrowana/ /#ksef 301
 /ksef-2027-dzialalnosc-nierejestrowana /#ksef 301
-/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/ /#arkusz 301
-/ewidencja-sprzedazy-dzialalnosc-nierejestrowana /#arkusz 301
+/ewidencja-sprzedazy-dzialalnosc-nierejestrowana/ / 301
+/ewidencja-sprzedazy-dzialalnosc-nierejestrowana / 301
+/ewidencja/ / 301
+/ewidencja / 301

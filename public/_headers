@@ -1,9 +1,11 @@
 # Cloudflare Pages: nagłówki dla wszystkich ścieżek.
 # CSP musi być zgodny z meta CSP w plikach HTML (sprawdza test/strony.test.js).
+# connect-src: 'self' (wzór arkusza do eksportu XLSX z /pobierz/) i https://api.nbp.pl (kurs średni NBP
+# w ewidencji; API odpowiada nagłówkiem Access-Control-Allow-Origin: *). Nic więcej.
 # Cloudflare Web Analytics NIE jest włączone; żeby je włączyć, dopisz
 # https://static.cloudflareinsights.com do script-src i https://cloudflareinsights.com do connect-src.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; frame-ancestors 'none'
   X-Robots-Tag: noindex, nofollow
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

@@ -27,23 +27,38 @@ test('są wszystkie strony', () => {
   assert.deepEqual(sciezki, ['index.html', 'o-nas/index.html', 'prywatnosc/index.html', 'regulamin/index.html']);
 });
 
-test('bez webowej ewidencji i linków do usuniętych podstron', () => {
+// Ewidencja działa w przeglądarce, ale pamięć przeglądarki ma tylko magazyn.js, a zapytania sieciowe tylko widok ewidencji
+// (wzór arkusza z /pobierz/ i kurs NBP przez nbp.js).
+test('bez linków do usuniętych podstron, pamięć i sieć tylko w wyznaczonych modułach', () => {
   for (const plik of [...HTML, ...JS]) {
     const tresc = readFileSync(plik, 'utf8');
-    assert.ok(!/ewidencja-sprzedazy|ewidencja\.js|\/limit-dzialalnosc-nierejestrowana\/|\/ksef-2027-dzialalnosc/.test(tresc), `${plik}: odwołanie do usuniętej strony`);
-    assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(/.test(tresc), `${plik}: pamięć przeglądarki albo zapytanie sieciowe`);
+    const nazwa = relative(PUBLIC, plik).replaceAll('\\', '/');
+    assert.ok(!/ewidencja-sprzedazy|\/limit-dzialalnosc-nierejestrowana\/|\/ksef-2027-dzialalnosc/.test(tresc), `${plik}: odwołanie do usuniętej strony`);
+    assert.ok(!/sessionStorage|indexedDB|XMLHttpRequest|WebSocket|sendBeacon/.test(tresc), `${plik}: niedozwolone API`);
+    if (nazwa !== 'js/magazyn.js' && plik.endsWith('.js')) assert.ok(!/localStorage/.test(tresc), `${plik}: localStorage poza magazyn.js`);
+    if (nazwa !== 'js/ewidencja-widok.js') assert.ok(!/\bfetch\(/.test(tresc), `${plik}: fetch poza widokiem ewidencji`);
   }
+  const widok = readFileSync(join(PUBLIC, 'js/ewidencja-widok.js'), 'utf8');
+  for (const [, cel] of widok.matchAll(/fetch\(([^,)]+)/g)) assert.ok(["'/pobierz/arkusz-limit-dn.xlsx'", '...a'].includes(cel.trim()), `fetch do ${cel}`);
 });
 
-test('strona główna: licznik, sekcja KSeF ze źródłami, jedna akcja „Pobierz arkusz”', () => {
+// Stroną główną jest ewidencja, licznik to drugorzędne „Szybkie sprawdzenie” niżej.
+test('strona główna: ewidencja na górze, licznik niżej, sekcja KSeF ze źródłami, jedna akcja „Pobierz arkusz”', () => {
   const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
-  assert.match(html, /<h1>Limit działalności nierejestrowanej 2026&nbsp;i&nbsp;2027<\/h1>/);
+  assert.match(html, /<h1>Ewidencja sprzedaży i limit działalności nierejestrowanej<\/h1>/);
+  assert.ok(html.indexOf('id="stan"') < html.indexOf('id="wpis-form"'), 'stan kwartału przed formularzem');
+  assert.ok(html.indexOf('id="pliki"') < html.indexOf('id="licznik"'), 'licznik pod ewidencją');
+  assert.match(html, /<h2 id="licznik-tytul">Szybkie sprawdzenie bez ewidencji<\/h2>/);
+  const nav = /<nav class="nawigacja"[^>]*>([\s\S]*?)<\/nav>/.exec(html)[1];
+  assert.match(nav, /Ewidencja/);
+  assert.ok(!/Licznik/.test(nav), 'licznik nie jest w nawigacji');
   assert.match(html, /10&nbsp;813,50/);
   assert.match(html, /11&nbsp;137,50/);
   assert.match(html, /<h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej<\/h2>/);
   assert.match(html, /href="https:\/\/ksef\.podatki\.gov\.pl\//);
   assert.match(html, /href="https:\/\/www\.biznes\.gov\.pl\//);
-  assert.equal([...html.matchAll(/<button\b/g)].length, 1, 'jeden przycisk w formularzu');
+  const licznik = html.slice(html.indexOf('<form id="limit-form"'), html.indexOf('</form>', html.indexOf('<form id="limit-form"')));
+  assert.equal([...licznik.matchAll(/<button\b/g)].length, 1, 'jeden przycisk w liczniku');
   const pobierz = [...html.matchAll(/href="(\/pobierz\/[^"]+)" download/g)].map((m) => m[1]);
   assert.deepEqual(pobierz, ['/pobierz/arkusz-limit-dn.xlsx']);
   const ksef = html.slice(html.indexOf('id="ksef"'), html.indexOf('</section>', html.indexOf('id="ksef"')));
@@ -92,7 +107,9 @@ test('_headers: noindex, nosniff, frame-ancestors', () => {
   assert.match(naglowki, /X-Content-Type-Options: nosniff/);
   assert.match(cspNaglowek, /frame-ancestors 'none'/);
   assert.match(cspNaglowek, /^default-src 'none';/);
-  assert.ok(!/connect-src/.test(cspNaglowek), 'strona nie łączy się z innymi serwerami');
+  // Jedyny zewnętrzny serwer to API NBP (kurs średni; API odpowiada nagłówkiem Access-Control-Allow-Origin: *).
+  assert.match(cspNaglowek, /; connect-src 'self' https:\/\/api\.nbp\.pl; /);
+  assert.equal([...cspNaglowek.matchAll(/https?:\/\//g)].length, 1, 'jeden zewnętrzny adres w CSP');
 });
 
 test('JS: brak ciasteczek, eval i zewnętrznych adresów', () => {
@@ -101,7 +118,9 @@ test('JS: brak ciasteczek, eval i zewnętrznych adresów', () => {
     assert.ok(!/document\.cookie/.test(kod), `${plik}: document.cookie`);
     assert.ok(!/\beval\(|new Function\(/.test(kod), `${plik}: eval`);
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML/.test(kod), `${plik}: wstrzykiwanie HTML`);
-    assert.ok(!/https?:\/\//.test(kod), `${plik}: zewnętrzny adres`);
+    const adresy = [...kod.matchAll(/https?:\/\/[^\s'"`]+/g)].map((m) => m[0]);
+    const dozwolone = plik.endsWith('nbp.js') ? ['https://api.nbp.pl/api/exchangerates/rates/a'] : [];
+    assert.deepEqual(adresy, dozwolone, `${plik}: zewnętrzny adres`);
   }
 });
 
@@ -144,7 +163,6 @@ test('strona główna: najwyżej 2 zdania w akapicie, skróty rozwinięte, kwota
     const zdania = 1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length;
     assert.ok(zdania <= 2, `${zdania} zdania: ${tekst}`);
   }
-  assert.match(html, /<h1>[^<]*2026&nbsp;i&nbsp;2027<\/h1>/);
   const lead = /<p class="lead">([\s\S]*?)<\/p>/.exec(html)[1];
   assert.match(lead, /10&nbsp;813,50/);
   assert.match(lead, /11&nbsp;137,50/);
@@ -159,7 +177,7 @@ test('regulamin: faza testowa tylko w pkt 8, opis kursu NBP', () => {
   const pkt8 = reg.indexOf('<h2>8.');
   assert.ok(pkt8 > 0);
   assert.ok([...reg.matchAll(/fazie testowej/g)].every((m) => m.index > pkt8), 'faza testowa poza pkt 8');
-  assert.match(reg, /sam wpisuje\s+kurs średni NBP/);
+  assert.match(reg, /może go zmienić albo wpisać sam/);
 });
 
 function luminancja(hex) {
@@ -197,7 +215,94 @@ test('usługodawca: ta sama nazwa w stopce, w regulaminie i w polityce prywatno�
   }
   for (const s of ['regulamin', 'prywatnosc']) {
     const t = readFileSync(join(PUBLIC, `${s}/index.html`), 'utf8');
-    assert.match(t, /Wersja:? 0\.3, obowiązuje od dnia publikacji na stronie\./, `${s}: wersja 0.3`);
+    assert.match(t, /Wersja:? 0\.4, obowiązuje od dnia publikacji na stronie\./, `${s}: wersja 0.4`);
     assert.ok(t.includes('NobleCode Krzysztof Mizgała, e-mail:'), `${s}: nazwa w treści`);
   }
+});
+
+// ---------------------------------------------------------------- ewidencja i proporcje stron
+
+const tekstMain = (html) => html.slice(html.indexOf('<main'), html.indexOf('</main>'));
+const PUSTE = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
+
+/**
+ * Widoczny tekst <main>, tak jak widzi go użytkownik: bez elementów z atrybutem hidden, <dialog>, .sr-only, .tylko-druk
+ * (oraz script, style, template). Prosty skaner znaczników ze stosem zagnieżdżeń.
+ */
+export function widocznyTekst(html) {
+  const main = tekstMain(html);
+  let wynik = '';
+  let pomijaj = 0; // głębokość wewnątrz pomijanego elementu
+  let ostatni = 0;
+  for (const m of main.matchAll(/<(\/?)([a-zA-Z][\w-]*)([^>]*)>/g)) {
+    if (!pomijaj) wynik += main.slice(ostatni, m.index);
+    ostatni = m.index + m[0].length;
+    const [, zamykajacy, tag, atr] = m;
+    const nazwa = tag.toLowerCase();
+    if (PUSTE.has(nazwa) || atr.endsWith('/')) { if (!pomijaj) wynik += ' '; continue; }
+    if (zamykajacy) { if (pomijaj) pomijaj -= 1; else wynik += ' '; continue; }
+    const klasy = (/\sclass="([^"]*)"/.exec(atr)?.[1] ?? '').split(/\s+/);
+    const ukryty = /\shidden(?:[\s=]|$)/.test(atr) || ['dialog', 'script', 'style', 'template'].includes(nazwa)
+      || klasy.includes('sr-only') || klasy.includes('tylko-druk');
+    if (pomijaj || ukryty) pomijaj += 1; else wynik += ' ';
+  }
+  if (!pomijaj) wynik += main.slice(ostatni);
+  return wynik.replace(/&nbsp;/g, ' ');
+}
+const slowa = (html) => widocznyTekst(html).split(/\s+/).filter((w) => /[\p{L}\d]/u.test(w)).length;
+
+test('_redirects: stary adres /ewidencja/ prowadzi na stronę główną, katalogu nie ma (bez pętli)', () => {
+  const r = readFileSync(join(PUBLIC, '_redirects'), 'utf8');
+  assert.match(r, /^\/ewidencja\/ \/ 301$/m);
+  assert.ok(!HTML.some((p) => relative(PUBLIC, p).startsWith('ewidencja')), 'katalog ewidencja/ nie istnieje');
+  for (const p of HTML) assert.ok(!/href="\/ewidencja\//.test(readFileSync(p, 'utf8')), `${p}: link do /ewidencja/`);
+});
+
+test('widok ewidencji: replaceChildren tylko przez zastap() (bez „null” na stronie i w wydruku)', () => {
+  const kod = readFileSync(join(PUBLIC, 'js/ewidencja-widok.js'), 'utf8');
+  const wywolania = [...kod.matchAll(/\.replaceChildren\(/g)];
+  assert.equal(wywolania.length, 1, 'jedno wywołanie, w zastap()');
+  assert.match(kod, /function zastap\(rodzic, \.\.\.dzieci\) \{\n {2}rodzic\.replaceChildren\(\.\.\.dzieci\.flat\(\)\.filter\(\(d\) => d !== null && d !== undefined && d !== false\)\);/);
+  assert.match(kod, /zastap\(\$\('wydruk'\),/);
+});
+
+test('ewidencja: najwyżej 2 zdania w akapicie, etykiety pól, jeden region aria-live, wydruk w osobnym CSS', () => {
+  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  for (const [, blok] of tekstMain(html).matchAll(/<(?:p|dd|li)\b[^>]*>([\s\S]*?)<\/(?:p|dd|li)>/g)) {
+    const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    const zdania = 1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length;
+    assert.ok(zdania <= 2, `${zdania} zdania: ${tekst}`);
+  }
+  for (const [, id] of html.matchAll(/<(?:input|select)\b[^>]*\sid="([^"]+)"/g)) {
+    if (id === 'plik') continue; // ukryte pole pliku, otwierane przyciskami „Wczytaj”
+    assert.match(html, new RegExp(`<label for="${id}"`), `pole ${id} bez etykiety`);
+  }
+  assert.equal([...html.matchAll(/aria-live=/g)].length, 1, 'jeden region aria-live');
+  assert.match(html, /<link rel="stylesheet" href="\/css\/druk\.css" media="print">/);
+  for (const [, typ] of html.matchAll(/<button\b([^>]*)>/g)) assert.match(typ, /type="(button|submit)"/, 'przycisk bez type');
+});
+
+test('ewidencja: sekcja po przekroczeniu z 7 dniami, linkami do biznes.gov.pl i ZUS, bez liczenia podatku', () => {
+  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const s = html.slice(html.indexOf('id="przekroczenie"'), html.indexOf('</section>', html.indexOf('id="przekroczenie"')));
+  assert.match(s, /7 dni/);
+  assert.match(s, /href="https:\/\/www\.biznes\.gov\.pl\//);
+  assert.match(s, /href="https:\/\/www\.zus\.pl\//);
+  assert.match(s, /Podatku tu nie liczymy/);
+  assert.match(s, /sprawdzone \d{2}\.\d{2}\.\d{4}/);
+});
+
+test('strony prawne krótkie w porównaniu ze stronami funkcji (najwyżej 1,5× słów)', () => {
+  const funkcje = ['index.html'].reduce((s, p) => s + slowa(readFileSync(join(PUBLIC, p), 'utf8')), 0);
+  const prawne = ['regulamin/index.html', 'prywatnosc/index.html', 'o-nas/index.html'].reduce((s, p) => s + slowa(readFileSync(join(PUBLIC, p), 'utf8')), 0);
+  assert.ok(prawne <= 1.5 * funkcje, `prawne ${prawne} słów, funkcje ${funkcje} słów (${(prawne / funkcje).toFixed(2)}×)`);
+});
+
+test('polityka prywatności opisuje pamięć przeglądarki i zapytanie do NBP (tylko waluta i data)', () => {
+  const pol = readFileSync(join(PUBLIC, 'prywatnosc/index.html'), 'utf8');
+  assert.match(pol, /<h2>Pamięć przeglądarki<\/h2>/);
+  assert.match(pol, /localStorage/);
+  assert.match(pol, /Wyczyść dane/);
+  assert.match(pol, /<h2>Kurs NBP<\/h2>/);
+  assert.match(pol, /tylko kod waluty i zakres dat/);
 });

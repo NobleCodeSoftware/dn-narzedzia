@@ -3,43 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
   <title>Regulamin</title>
-  <meta name="description" content="Regulamin świadczenia usług drogą elektroniczną — Limit działalności nierejestrowanej.">
+  <meta name="description" content="Regulamin świadczenia usług drogą elektroniczną — Narzędziownik DN.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/">Licznik limitu</a>
-      <a class="powrot" href="/">Wróć do licznika limitu</a>
+      <a class="brand" href="/">Narzędziownik DN</a>
+      <nav class="nawigacja" aria-label="Narzędzia">
+        <a href="/">Ewidencja</a>
+      </nav>
     </div>
   </header>
   <main class="wrap">
     <h1>Regulamin świadczenia usług drogą elektroniczną</h1>
-    <p class="muted">Wersja: 0.3, obowiązuje od dnia publikacji na stronie.</p>
+    <p class="muted">Wersja: 0.4, obowiązuje od dnia publikacji na stronie.</p>
 
     <h2>1. Usługodawca</h2>
     <p>NobleCode Krzysztof Mizgała, e-mail: <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>. Adres do korespondencji udostępniamy na prośbę wysłaną e-mailem. Szczegóły: <a href="/o-nas/">O narzędziach i usługodawcy</a>.</p>
 
     <h2>2. Rodzaj i zakres usług</h2>
-    <p>Usługodawca udostępnia bezpłatnie narzędzie online „Licznik limitu działalności nierejestrowanej”: licznik limitu przychodu
-      działalności nierejestrowanej, arkusz kalkulacyjny do pobrania (plik XLSX) oraz informacje ogólne o KSeF.
-      Licznik działa w przeglądarce użytkownika. Dane wprowadzane przez użytkownika są przetwarzane lokalnie i nie są
-      wysyłane do usługodawcy. Strona nie pobiera kursów walut: arkusz ma kolumnę, do której użytkownik sam wpisuje
-      kurs średni NBP. Arkusz nie zawiera makr i nie łączy się z internetem.</p>
-    <p>Umowa o świadczenie usługi zawiera się z chwilą rozpoczęcia korzystania z narzędzia i trwa do zakończenia korzystania.
-      Użytkownik może w każdej chwili zaprzestać korzystania; usługodawca może zmienić lub zakończyć usługę.
-      O zakończeniu usługi i o zmianach niekorzystnych dla użytkownika usługodawca informuje na stronie z co najmniej
-      14-dniowym wyprzedzeniem. Pozostałe zmiany obowiązują od publikacji na stronie (pkt 8).</p>
+    <p>Usługodawca udostępnia bezpłatnie narzędzie online „Narzędziownik DN”: ewidencję sprzedaży w przeglądarce
+      z licznikiem limitu działalności nierejestrowanej, arkusz do pobrania oraz informacje ogólne.</p>
+    <p>Narzędzie działa w przeglądarce użytkownika, a wpisy nie są wysyłane do usługodawcy. Kurs średni NBP ewidencja pobiera
+      z serwisu api.nbp.pl, a użytkownik może go zmienić albo wpisać sam. Prognoza jest szacunkiem na podstawie dotychczasowej
+      sprzedaży.</p>
+    <p>Umowa zawiera się z chwilą rozpoczęcia korzystania z narzędzia i trwa do jego zakończenia. Użytkownik może przestać
+      korzystać w każdej chwili, a usługodawca może zmienić lub zakończyć usługę na zasadach z pkt 8.</p>
 
     <h2>3. Wymagania techniczne</h2>
     <ul>
       <li>aktualna przeglądarka (Chrome, Edge, Firefox lub Safari) z włączoną obsługą JavaScript,</li>
-      <li>połączenie z internetem do załadowania strony; obliczenia działają lokalnie,</li>
+      <li>połączenie z internetem do załadowania strony i pobrania kursu NBP; obliczenia działają lokalnie,</li>
       <li>do arkusza: program obsługujący pliki XLSX, np. Microsoft Excel, LibreOffice Calc albo Arkusze Google.</li>
     </ul>
 
@@ -48,31 +48,27 @@
       bezprawnym, naruszanie praw osób trzecich, próby zakłócania działania narzędzia lub obchodzenia jego zabezpieczeń.</p>
 
     <h2>5. Odpowiedzialność</h2>
-    <p>Narzędzie ma charakter informacyjno-pomocniczy. Wyniki narzędzia nie stanowią porady prawnej, podatkowej ani
-      finansowej. Użytkownik sam odpowiada za prowadzenie i przechowywanie swojej ewidencji (np. w pobranym arkuszu, przechowywanym na własnym urządzeniu).
-      Regulamin nie wprowadza dodatkowych ograniczeń odpowiedzialności usługodawcy: usługodawca odpowiada na zasadach
-      ogólnych, w granicach przepisów prawa, w tym przepisów chroniących konsumentów.</p>
+    <p>Narzędzie ma charakter informacyjno-pomocniczy i nie stanowi porady prawnej, podatkowej ani finansowej. Użytkownik
+      sam odpowiada za swoją ewidencję, w tym za sprawdzenie kursów i kopię w pliku, bo dane w pamięci przeglądarki mogą zniknąć.
+      Usługodawca odpowiada na zasadach ogólnych, w granicach przepisów, w tym chroniących konsumentów.</p>
 
     <h2>6. Reklamacje</h2>
-    <p>Reklamację dotyczącą działania narzędzia można zgłosić e-mailem na <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>. Prosimy o opis problemu,
-      przeglądarkę i system. Usługodawca odpowiada w ciągu 14 dni od otrzymania reklamacji. Prosimy nie przesyłać w zgłoszeniu
-      danych osobowych ani arkuszy z danymi, które nie są konieczne.</p>
+    <p>Reklamację można zgłosić e-mailem na <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>, z opisem problemu,
+      przeglądarką i systemem. Usługodawca odpowiada w ciągu 14 dni od otrzymania reklamacji.</p>
 
     <h2>7. Prywatność</h2>
     <p>Zasady przetwarzania danych: <a href="/prywatnosc/">Polityka prywatności</a>.</p>
 
     <h2>8. Zmiany Regulaminu</h2>
-    <p>Do czasu udostępnienia strony w wyszukiwarkach serwis działa w fazie testowej.
-      Zmiany niekorzystne dla użytkownika ogłaszane są na stronie z podaniem daty wejścia w życie, co najmniej 14 dni
-      przed tą datą. Pozostałe zmiany, w tym zmiany w fazie testowej, obowiązują od publikacji na stronie. Każda zmiana
-      dotyczy tylko korzystania z narzędzia rozpoczętego po jej wejściu w życie. Jeśli nie akceptujesz zmian, możesz w każdej chwili przestać korzystać z narzędzia; korzystanie nie wymaga
-      konta ani wypowiedzenia.</p>
+    <p>Do udostępnienia strony w wyszukiwarkach serwis działa w fazie testowej. O zakończeniu usługi
+      i zmianach niekorzystnych dla użytkownika usługodawca informuje na stronie co najmniej 14 dni przed ich wejściem w życie,
+      a pozostałe zmiany obowiązują od publikacji.</p>
+    <p>Zmiana dotyczy korzystania rozpoczętego po jej wejściu w życie. Korzystanie nie wymaga konta ani wypowiedzenia.</p>
 
     <h2>9. Postanowienia końcowe</h2>
-    <p>W sprawach nieuregulowanych stosuje się prawo polskie, z zachowaniem bezwzględnie obowiązujących praw konsumenta
-      wynikających z prawa kraju jego zamieszkania. Konsument może skorzystać z bezpłatnej pomocy miejskiego (powiatowego)
-      rzecznika konsumentów lub organizacji konsumenckiej, w tym złożyć za ich pośrednictwem skargę. Usługodawca nie wskazuje
-      podmiotu pozasądowego rozwiązywania sporów. Spory rozstrzyga właściwy sąd powszechny.</p>
+    <p>Stosuje się prawo polskie, z zachowaniem bezwzględnie obowiązujących przepisów chroniących konsumenta w kraju jego
+      zamieszkania. Konsument może skorzystać z bezpłatnej pomocy rzecznika konsumentów lub organizacji konsumenckiej.</p>
+    <p>Usługodawca nie wskazuje podmiotu pozasądowego rozwiązywania sporów. Spory rozstrzyga właściwy sąd powszechny.</p>
 
   </main>
   <footer class="site">

@@ -3,27 +3,201 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
-  <title>Limit działalności nierejestrowanej 2026 i 2027</title>
-  <meta name="description" content="Wpisz przychód z kwartału i sprawdź, ile limitu działalności nierejestrowanej wykorzystałeś. Limit 2026: 10 813,50 zł, 2027: 11 137,50 zł. Darmowy arkusz do pobrania.">
+  <title>Ewidencja sprzedaży i limit działalności nierejestrowanej 2026 i 2027</title>
+  <meta name="description" content="Limit działalności nierejestrowanej: 10 813,50 zł na kwartał w 2026 r., 11 137,50 zł w 2027 r. Ewidencja sprzedaży w przeglądarce: limit kwartału, prognoza przekroczenia, kurs średni NBP z dnia roboczego przed sprzedażą, wydruk ewidencji. Bez konta, dane zostają u Ciebie.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/druk.css" media="print">
+  <script type="module" src="/js/ewidencja-widok.js"></script>
   <script type="module" src="/js/limit.js"></script>
 </head>
 <body>
   <header class="site">
-    <div class="wrap">
-      <a class="brand" href="/" aria-current="page">Licznik limitu</a>
+    <div class="wrap szeroki">
+      <a class="brand" href="/">Narzędziownik DN</a>
+      <nav class="nawigacja" aria-label="Narzędzia">
+        <a href="/" aria-current="page">Ewidencja</a>
+      </nav>
     </div>
   </header>
-  <main class="wrap">
-    <h1>Limit działalności nierejestrowanej 2026&nbsp;i&nbsp;2027</h1>
-    <p class="lead">Limit na kwartał to <strong>10&nbsp;813,50&nbsp;zł</strong> w 2026&nbsp;r. i&nbsp;<strong>11&nbsp;137,50&nbsp;zł</strong> w 2027&nbsp;r. Wpisz sprzedaż z kwartału, a zobaczysz, ile limitu już wykorzystałeś.</p>
+  <main class="wrap szeroki">
+    <h1>Ewidencja sprzedaży i limit działalności nierejestrowanej</h1>
+    <p class="lead">Wpisuj sprzedaż, a strona pilnuje limitu kwartału: <strong>10&nbsp;813,50&nbsp;zł</strong> w 2026&nbsp;r. i&nbsp;<strong>11&nbsp;137,50&nbsp;zł</strong> w 2027&nbsp;r. Kurs NBP pobiera się sam, a dane zostają w Twojej przeglądarce.</p>
 
-    <section class="card licznik" aria-labelledby="licznik-tytul">
-      <h2 id="licznik-tytul" class="sr-only">Licznik limitu</h2>
+    <p id="przyklad-pasek" class="pasek-info" hidden>
+      <span>Oglądasz przykładowe dane.</span>
+      <button type="button" id="przyklad-koniec" class="drugorzedny maly">Zacznij od zera</button>
+    </p>
+
+    <section class="card stan" id="stan" aria-labelledby="stan-tytul">
+      <h2 id="stan-tytul">Bieżący kwartał</h2>
+      <p id="stan-okres" class="podtytul"></p>
+      <div id="stan-pusto">
+        <p>Nie masz jeszcze wpisów. Dodaj pierwszą sprzedaż albo wczytaj swój arkusz.</p>
+        <div class="przyciski">
+          <a class="przycisk" href="#wpis-form" id="pusto-dodaj">Dodaj sprzedaż</a>
+          <button type="button" class="drugorzedny" data-akcja="wczytaj">Wczytaj arkusz</button>
+          <button type="button" class="drugorzedny" id="pokaz-przyklad">Pokaż przykład</button>
+        </div>
+      </div>
+      <div id="stan-dane" hidden>
+        <p class="wynik-procent"><span id="stan-procent">0%</span> <span class="wynik-podpis">limitu</span></p>
+        <div class="pasek" aria-hidden="true">
+          <div class="pasek-prognoza" id="stan-pasek-prognoza"></div>
+          <div class="pasek-wypelnienie" id="stan-pasek"></div>
+          <span class="znacznik z70"></span><span class="znacznik z85"></span><span class="znacznik z95"></span>
+        </div>
+        <p class="skala" aria-hidden="true"><span>0%</span><span>70</span><span>85</span><span>100%</span></p>
+        <p id="stan-status" class="status"></p>
+        <dl class="liczby">
+          <div><dt>Sprzedaż w kwartale</dt><dd id="stan-suma"></dd></div>
+          <div><dt>Zostało do limitu</dt><dd id="stan-zapas"></dd></div>
+          <div><dt>Prognoza na koniec kwartału</dt><dd id="stan-koniec"></dd></div>
+          <div><dt>Średnio dziennie, żeby się zmieścić</dt><dd id="stan-budzet"></dd></div>
+        </dl>
+        <p id="stan-prognoza" class="prognoza"></p>
+        <div class="tabela">
+          <table class="progi">
+            <caption class="sr-only">Progi limitu w bieżącym kwartale</caption>
+            <thead><tr><th scope="col">Próg</th><th scope="col" class="num">Kwota</th><th scope="col">Kiedy</th></tr></thead>
+            <tbody id="stan-progi"></tbody>
+          </table>
+        </div>
+        <details class="metoda">
+          <summary>Jak liczymy prognozę</summary>
+          <p>Bierzemy sprzedaż od początku kwartału do dziś i dzielimy przez liczbę minionych dni. Zakładamy, że w kolejnych dniach sprzedajesz tyle samo.</p>
+          <p>To tylko szacunek, a jeden duży zakup go zmienia. Na początku kwartału i przy kilku wpisach oznaczamy go jako mało pewny.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="card" id="formularz" aria-labelledby="form-tytul">
+      <h2 id="form-tytul">Dodaj sprzedaż</h2>
+      <form id="wpis-form" novalidate>
+        <div class="siatka">
+          <div class="pole">
+            <label for="f-data">Data sprzedaży</label>
+            <input id="f-data" name="data" type="date" required min="2020-01-01" max="2035-12-31">
+          </div>
+          <div class="pole">
+            <label for="f-kwota">Kwota</label>
+            <input id="f-kwota" name="kwota" inputmode="decimal" autocomplete="off" placeholder="np. 49,90" required aria-describedby="f-kwota-podp">
+            <p id="f-kwota-podp" class="podpowiedz">Zwrot wpisz z minusem, np. −49,90.</p>
+          </div>
+          <div class="pole">
+            <label for="f-waluta">Waluta</label>
+            <select id="f-waluta" name="waluta"></select>
+          </div>
+          <div class="pole" id="pole-kurs" hidden>
+            <label for="f-kurs">Kurs średni NBP</label>
+            <input id="f-kurs" name="kurs" inputmode="decimal" autocomplete="off" placeholder="np. 4,3641" aria-describedby="kurs-info">
+            <p id="kurs-info" class="podpowiedz"></p>
+            <button type="button" id="kurs-pobierz" class="drugorzedny maly">Pobierz kurs NBP</button>
+          </div>
+        </div>
+        <div class="pole">
+          <label for="f-opis">Opis <span class="opcjonalne">(nieobowiązkowy)</span></label>
+          <input id="f-opis" name="opis" maxlength="200" autocomplete="off" placeholder="np. kolczyki, zamówienie Etsy 1234">
+        </div>
+        <p id="f-podglad" class="podglad" hidden></p>
+        <p id="form-blad" class="blad" hidden></p>
+        <div class="przyciski">
+          <button type="submit" class="glowny" id="f-zapisz">Dodaj sprzedaż</button>
+          <button type="button" class="drugorzedny" id="f-anuluj" hidden>Anuluj edycję</button>
+        </div>
+        <p id="f-potwierdzenie" class="potwierdzenie" hidden></p>
+      </form>
+    </section>
+
+    <section id="wpisy" aria-labelledby="wpisy-tytul">
+      <div class="naglowek-sekcji">
+        <h2 id="wpisy-tytul">Wpisy</h2>
+        <div class="pole filtr">
+          <label for="filtr-kwartal">Pokaż</label>
+          <select id="filtr-kwartal"></select>
+        </div>
+      </div>
+      <p id="braki-kursow" class="pasek-info ostrzezenie" hidden>
+        <span id="braki-kursow-tekst"></span>
+        <button type="button" id="uzupelnij-kursy" class="drugorzedny maly">Uzupełnij kursy NBP</button>
+      </p>
+      <p id="wpisy-pusto" class="muted">Brak wpisów w tym okresie.</p>
+      <ol id="lista-wpisow" class="wpisy"></ol>
+    </section>
+
+    <section id="historia" aria-labelledby="historia-tytul">
+      <h2 id="historia-tytul">Historia kwartałów</h2>
+      <p id="historia-pusto" class="muted">Historia pojawi się po pierwszym wpisie.</p>
+      <div class="tabela" id="historia-tabela" hidden>
+        <table>
+          <caption class="sr-only">Sprzedaż i wykorzystanie limitu w kolejnych kwartałach</caption>
+          <thead><tr><th scope="col">Kwartał</th><th scope="col" class="num">Sprzedaż</th><th scope="col" class="kol-pasek">Limit</th><th scope="col">Stan</th></tr></thead>
+          <tbody id="historia-wiersze"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="przekroczenie" aria-labelledby="przekroczenie-tytul">
+      <h2 id="przekroczenie-tytul">Co się stanie po przekroczeniu limitu</h2>
+      <div id="przekroczenie-stan" class="ramka"></div>
+      <ol class="kroki">
+        <li>Od dnia przekroczenia działalność przestaje być nierejestrowana i staje się zwykłą działalnością gospodarczą.</li>
+        <li>Na wniosek o wpis do rejestru firm CEIDG (Centralnej Ewidencji i Informacji o Działalności Gospodarczej) masz 7 dni od dnia przekroczenia.</li>
+        <li>Z wpisem pojawiają się składki ZUS. Na start może Ci przysługiwać ulga, opisana na stronie ZUS.</li>
+      </ol>
+      <p>Podatku tu nie liczymy. W sprawie swojej sytuacji zapytaj Krajową Informację Skarbową.</p>
+      <p class="zrodla">Źródła (sprawdzone 22.10.2026): <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a>,
+        <a id="link-rejestracja" href="https://www.biznes.gov.pl/pl/portal/061" rel="noopener noreferrer">biznes.gov.pl: Zakładanie i rejestracja firmy</a>,
+        <a href="https://www.zus.pl/-/ulga-na-start-preferencyjna-podstawa-dzialalnosc-nieewidencjonowana-jakie-sa-warunki-uprawnienia-i-skutk-1" rel="noopener noreferrer">ZUS: Ulga na start i preferencyjna podstawa</a>.</p>
+    </section>
+
+    <section class="card" id="pliki" aria-labelledby="pliki-tytul">
+      <h2 id="pliki-tytul">Plik, wydruk i Twoje dane</h2>
+      <p>Wpisy są tylko w tej przeglądarce i mogą zniknąć, np. po wyczyszczeniu historii. Zapisuj plik co jakiś czas: to Twoja kopia zapasowa.</p>
+      <div class="przyciski">
+        <button type="button" id="zapisz-xlsx">Zapisz arkusz XLSX</button>
+        <button type="button" class="drugorzedny" id="zapisz-csv">Zapisz CSV</button>
+        <button type="button" class="drugorzedny" data-akcja="wczytaj">Wczytaj plik</button>
+      </div>
+      <input type="file" id="plik" class="sr-only" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" tabindex="-1" aria-hidden="true">
+      <p class="podpowiedz">Arkusz ma ten sam układ co <a href="#arkusz">nasz darmowy arkusz</a>. Plik czyta Twoja przeglądarka i nigdzie go nie wysyła.</p>
+      <p id="pliki-stan" class="podpowiedz"></p>
+
+      <h3>Wydruk ewidencji</h3>
+      <p>Uproszczona ewidencja sprzedaży za rok: liczba porządkowa, data, kwota i kwota narastająco. W oknie drukowania wybierz „Zapisz jako PDF”, jeśli wolisz plik.</p>
+      <p>Jeśli świadczysz usługi, których miejscem świadczenia nie jest Polska, art. 109 ust. 3a ustawy o VAT wymaga podania w ewidencji nazwy usługi: wpisz ją w opisie.</p>
+      <p>Ewidencję prowadzi się za każdy dzień, najpóźniej przed sprzedażą w dniu następnym (art. 109 ust. 1 ustawy o VAT).</p>
+      <div class="siatka">
+        <div class="pole">
+          <label for="druk-rok">Rok</label>
+          <select id="druk-rok"></select>
+        </div>
+        <div class="pole">
+          <label for="druk-osoba">Imię i nazwisko na wydruku <span class="opcjonalne">(nieobowiązkowe)</span></label>
+          <input id="druk-osoba" maxlength="80" autocomplete="name">
+        </div>
+      </div>
+      <div class="przyciski">
+        <button type="button" class="drugorzedny" id="drukuj">Drukuj ewidencję</button>
+      </div>
+
+      <h3>Pamięć przeglądarki</h3>
+      <div class="przelacznik">
+        <input type="checkbox" id="pamietaj" checked>
+        <label for="pamietaj">Pamiętaj wpisy w tej przeglądarce</label>
+      </div>
+      <p class="podpowiedz">Bez tej opcji wpisy znikną po zamknięciu strony, chyba że zapiszesz plik.</p>
+      <div class="przyciski">
+        <button type="button" class="niebezpieczny" id="wyczysc">Wyczyść dane</button>
+      </div>
+    </section>
+
+    <section class="card licznik" id="licznik" aria-labelledby="licznik-tytul">
+      <h2 id="licznik-tytul">Szybkie sprawdzenie bez ewidencji</h2>
+      <p>Znasz już sumę sprzedaży z kwartału? Wpisz ją, a zobaczysz procent limitu.</p>
       <form id="limit-form" novalidate>
         <label for="kwartal">Kwartał</label>
         <select id="kwartal" name="kwartal">
@@ -59,7 +233,6 @@
         <p id="wynik-dalej" hidden><a href="#przekroczenie">Co dalej po przekroczeniu limitu</a></p>
       </div>
       <p id="blad" class="blad" role="alert" hidden></p>
-      <p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"></p>
       <p class="podpowiedz">Liczy Twoja przeglądarka. Kwota nie jest nigdzie wysyłana ani zapisywana.</p>
     </section>
 
@@ -69,6 +242,7 @@
       <ul>
         <li>Sprzedaż w euro lub dolarach: wpisujesz kurs NBP, a arkusz przelicza na złote. W arkuszu jest instrukcja, skąd wziąć kurs.</li>
         <li>Działa w Excelu, LibreOffice i Arkuszach Google. Bez makr, bez konta, bez internetu.</li>
+        <li>Wypełniony arkusz wczytasz też do ewidencji wyżej.</li>
       </ul>
       <a class="przycisk" href="/pobierz/arkusz-limit-dn.xlsx" download>Pobierz arkusz (XLSX, 115 KB)</a>
     </section>
@@ -91,14 +265,6 @@
         <a href="https://eli.gov.pl/eli/DU/2026/1213/ogl" rel="noopener noreferrer">Dz.U. 2026 poz. 1213</a> (płaca minimalna 2027).</p>
     </section>
 
-    <section id="przekroczenie" aria-labelledby="przekroczenie-tytul">
-      <h2 id="przekroczenie-tytul">Gdy przekroczysz limit</h2>
-      <p>Według poradników administracji działalność przestaje być nierejestrowana. Wniosek o wpis do rejestru firm CEIDG (Centralnej Ewidencji i Informacji
-        o Działalności Gospodarczej) trzeba złożyć w ciągu 7 dni od dnia, w którym przekroczono limit.</p>
-      <p class="zrodla">Źródła: <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a>,
-        <a href="https://www.podatki.gov.pl/poradniki-i-informatory/dzialalnosc-nierejestrowana" rel="noopener noreferrer">podatki.gov.pl: Działalność nierejestrowana</a>.</p>
-    </section>
-
     <section id="ksef" aria-labelledby="ksef-tytul">
       <h2 id="ksef-tytul">KSeF od 2027 w działalności nierejestrowanej</h2>
       <p>KSeF (Krajowy System e-Faktur) to państwowy system do wystawiania i odbierania faktur.</p>
@@ -114,11 +280,21 @@
         <a href="https://www.biznes.gov.pl/pl/portal/00115" rel="noopener noreferrer">biznes.gov.pl: Działalność nierejestrowana</a> (aktualizacja 5.05.2026).</p>
     </section>
 
-    <p class="uwaga">Strona podaje informacje ogólne i nie ocenia Twojej sytuacji. W sprawach indywidualnych zapytaj
-      Krajową Informację Skarbową albo doradcę podatkowego.</p>
+    <p class="uwaga">Strona pomaga prowadzić ewidencję i nie ocenia Twojej sytuacji. W sprawach indywidualnych zapytaj Krajową Informację Skarbową albo doradcę podatkowego.</p>
+
+    <p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"></p>
   </main>
+
+  <section id="wydruk" class="tylko-druk" aria-label="Wydruk ewidencji"></section>
+
+  <dialog id="dialog" aria-labelledby="dialog-tytul" aria-describedby="dialog-tekst">
+    <h2 id="dialog-tytul"></h2>
+    <p id="dialog-tekst"></p>
+    <div class="przyciski" id="dialog-przyciski"></div>
+  </dialog>
+
   <footer class="site">
-    <div class="wrap">
+    <div class="wrap szeroki">
       <p>Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego</p>
       <p>Usługodawca: NobleCode Krzysztof Mizgała · <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a></p>
       <p><a href="/regulamin/">Regulamin</a> · <a href="/prywatnosc/">Prywatność</a> · <a href="/o-nas/">O nas</a></p>

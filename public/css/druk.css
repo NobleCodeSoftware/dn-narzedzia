@@ -1,0 +1,19 @@
+/* Wydruk uproszczonej ewidencji sprzedaży (przycisk „Drukuj ewidencję” albo Ctrl+P na stronie ewidencji).
+   Drukujemy tylko sekcję #wydruk: czarny tekst na białym, A4 pionowo, nagłówek tabeli na każdej stronie. */
+@page { size: A4 portrait; margin: 14mm 12mm 16mm; }
+
+body { background: #fff !important; color: #000 !important; font: 10pt/1.35 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+header.site, footer.site, main, dialog { display: none !important; }
+.tylko-druk { display: block !important; }
+
+#wydruk h1 { font-size: 15pt; margin: 0 0 4pt; }
+#wydruk p { margin: 0 0 4pt; }
+#wydruk table { width: 100%; border-collapse: collapse; margin-top: 8pt; font-size: 9pt; }
+#wydruk thead { display: table-header-group; }
+#wydruk tr { break-inside: avoid; }
+#wydruk th, #wydruk td { border: 0.5pt solid #555; padding: 3pt 4pt; text-align: left; vertical-align: top; color: #000; }
+#wydruk th { background: #eee !important; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+#wydruk td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#wydruk tr.suma-kwartalu td { font-weight: 700; background: #f4f4f4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+#wydruk .druk-uwaga { font-weight: 700; margin-top: 8pt; }
+#wydruk .druk-stopka { margin-top: 10pt; font-size: 8pt; color: #333; }

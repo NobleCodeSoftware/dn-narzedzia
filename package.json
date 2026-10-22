@@ -1,8 +1,8 @@
 {
   "name": "dn-narzedzia",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Licznik limitu działalności nierejestrowanej (w przeglądarce) i darmowy arkusz XLSX do pobrania.",
+  "description": "Narzędziownik DN: licznik limitu, ewidencja sprzedaży w przeglądarce (prognoza, kurs NBP, wydruk) i darmowy arkusz XLSX.",
   "license": "MIT",
   "type": "module",
   "engines": { "node": ">=20" },

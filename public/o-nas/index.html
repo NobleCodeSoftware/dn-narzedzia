@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
   <title>O narzędziach i usługodawcy</title>
@@ -14,8 +14,10 @@
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/">Licznik limitu</a>
-      <a class="powrot" href="/">Wróć do licznika limitu</a>
+      <a class="brand" href="/">Narzędziownik DN</a>
+      <nav class="nawigacja" aria-label="Narzędzia">
+        <a href="/">Ewidencja</a>
+      </nav>
     </div>
   </header>
   <main class="wrap">
@@ -28,13 +30,11 @@
     <p>NobleCode to marka, a nie odrębny podmiot prawny.</p>
 
     <h2>Informacja o AI</h2>
-    <p>Ten produkt został stworzony i jest rozwijany z udziałem sztucznej inteligencji (agenci AI w ramach NobleCode).
-      Odpowiedzialność za produkt ponosi usługodawca.</p>
+    <p>Produkt powstaje z udziałem sztucznej inteligencji (agenci AI w ramach NobleCode). Odpowiada za niego usługodawca.</p>
 
     <h2>Brak doradztwa</h2>
-    <p>Narzędzie i materiały mają charakter wyłącznie informacyjny i nie stanowią doradztwa podatkowego, prawnego ani finansowego,
-      ani porady w rozumieniu przepisów o doradztwie podatkowym. Wyniki mogą zawierać błędy; przed podjęciem decyzji skonsultuj się
-      z uprawnionym doradcą.</p>
+    <p>Narzędzie ma charakter informacyjny i nie jest doradztwem podatkowym, prawnym ani finansowym. Wyniki mogą zawierać
+      błędy, więc przed decyzją skonsultuj się z uprawnionym doradcą.</p>
 
     <h2>Kod źródłowy i bezpieczeństwo</h2>
     <p>Kod narzędzi jest otwarty (licencja MIT). Podatności zgłaszaj zgodnie z plikiem SECURITY.md w repozytorium

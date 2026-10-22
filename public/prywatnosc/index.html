@@ -3,66 +3,61 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.nbp.pl; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
   <title>Polityka prywatności</title>
-  <meta name="description" content="Polityka prywatności licznika limitu działalności nierejestrowanej: bez ciasteczek, bez analityki, dane zostają w przeglądarce.">
+  <meta name="description" content="Polityka prywatności Narzędziownika DN: bez kont, ciasteczek i analityki. Wpisy zostają w przeglądarce, o kurs NBP pytamy bez kwot i opisów.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/">Licznik limitu</a>
-      <a class="powrot" href="/">Wróć do licznika limitu</a>
+      <a class="brand" href="/">Narzędziownik DN</a>
+      <nav class="nawigacja" aria-label="Narzędzia">
+        <a href="/">Ewidencja</a>
+      </nav>
     </div>
   </header>
   <main class="wrap">
     <h1>Polityka prywatności</h1>
-    <p class="muted">Wersja 0.3, obowiązuje od dnia publikacji na stronie.</p>
+    <p class="muted">Wersja 0.4, obowiązuje od dnia publikacji na stronie.</p>
 
     <h2>Kto jest administratorem</h2>
     <p>NobleCode Krzysztof Mizgała, e-mail: <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>. Adres do korespondencji udostępniamy na prośbę wysłaną e-mailem.</p>
 
-    <h2>Jakich danych nie zbieramy</h2>
-    <p>Licznik limitu działa w Twojej przeglądarce. Kwoty, które w nim wpisujesz, nie są wysyłane do nas ani do osób trzecich
-      i nie są zapisywane. Nie tworzymy kont, nie używamy ciasteczek, pamięci przeglądarki, narzędzi analitycznych
-      ani skryptów śledzących. Strona nie łączy się z innymi serwerami.</p>
+    <h2>Co dzieje się z danymi, które wpisujesz</h2>
+    <p>Licznik i ewidencja działają w Twojej przeglądarce: kwoty, opisy (także dane klienta) i wczytane pliki nie trafiają
+      do nas ani do osób trzecich. Nie tworzymy kont, nie używamy ciasteczek, analityki ani skryptów śledzących.</p>
 
-    <h2>Arkusz do pobrania</h2>
-    <p>Arkusz to zwykły plik XLSX bez makr i bez połączeń z internetem. To, co w nim wpiszesz, zostaje w pliku na Twoim
-      urządzeniu albo w usłudze, do której sam go wgrasz (np. Arkusze Google, na zasadach tej usługi). Nie mamy dostępu
-      do tego pliku. Pobranie pliku to zwykłe żądanie do serwera strony, opisane niżej.</p>
+    <h2>Pamięć przeglądarki</h2>
+    <p>Ewidencja zapisuje wpisy, ustawienie pamięci i nieobowiązkowe imię do wydruku w pamięci przeglądarki (localStorage),
+      żeby wpisy nie znikały po zamknięciu strony. Po wyłączeniu opcji „Pamiętaj wpisy w tej przeglądarce” zostaje
+      zapamiętane tylko to ustawienie, a przycisk „Wyczyść dane” usuwa wszystko.</p>
 
-    <h2>Dane techniczne serwera</h2>
-    <p>Stronę hostuje Cloudflare, Inc. z USA (usługa Cloudflare Pages). Przy każdym wejściu na stronę Cloudflare automatycznie
-      przetwarza standardowe dane techniczne połączenia (np. adres IP, czas żądania, adres strony, typ przeglądarki), żeby
-      dostarczyć stronę i chronić ją przed nadużyciami. Podstawą jest nasz prawnie uzasadniony interes w udostępnieniu
-      i zabezpieczeniu strony (art. 6 ust. 1 lit. f RODO). Sami nie włączamy dodatkowych logów ani analityki i nie łączymy
-      tych danych z innymi.</p>
-    <p>Cloudflare robi to jako podmiot przetwarzający, zgodnie ze swoją umową powierzenia
-      (<a href="https://www.cloudflare.com/cloudflare-customer-dpa/">Cloudflare Data Processing Addendum</a>), która według
-      Cloudflare jest częścią warunków korzystania z jego usług.</p>
-    <p>Cloudflare działa na całym świecie, więc dane mogą trafić poza Europejski Obszar Gospodarczy, w tym do USA.
-      Cloudflare podaje, że takie przekazanie opiera się na programie EU-U.S. Data Privacy Framework (decyzja Komisji
-      Europejskiej stwierdzająca odpowiedni stopień ochrony), a gdyby certyfikacja Cloudflare w tym programie wygasła lub została unieważniona, na standardowych klauzulach
-      umownych Komisji Europejskiej. Klauzule są włączone do umowy powierzenia Cloudflare (link wyżej). Udział Cloudflare
-      w programie możesz sprawdzić na <a href="https://www.dataprivacyframework.gov/list">liście programu</a>.</p>
-    <p>Okres przechowywania tych danych ustala Cloudflare. Jego
-      <a href="https://www.cloudflare.com/privacypolicy/">polityka prywatności</a> nie podaje stałej liczby dni, tylko
-      ogólną zasadę: dane są przechowywane przez czas zgodny z celami przetwarzania.</p>
+    <h2>Kurs NBP</h2>
+    <p>Przy sprzedaży w walucie obcej przeglądarka pobiera kurs średni z <a href="https://api.nbp.pl/">api.nbp.pl</a>
+      (Narodowy Bank Polski). Zapytanie zawiera tylko kod waluty i zakres dat.</p>
+    <p>Jak przy każdym połączeniu, NBP otrzymuje adres IP i dane techniczne przeglądarki, a także adres naszej strony
+      (dn.noblecode.pl, bez podstrony), który przeglądarka zawsze dołącza do takiego zapytania. NBP przetwarza je na własnych
+      zasadach (<a href="https://www.nbp.pl/link/polityka-prywatnosci">polityka prywatności NBP</a>).</p>
+    <p>Zapytanie idzie bez ciasteczek, a kurs możesz też wpisać sam.</p>
+
+    <h2>Hosting i dane techniczne</h2>
+    <p>Stronę hostuje Cloudflare, Inc. (USA) jako nasz podmiot przetwarzający, na podstawie umowy powierzenia
+      (<a href="https://www.cloudflare.com/cloudflare-customer-dpa/">Cloudflare Data Processing Addendum</a>). Przy każdym wejściu
+      przetwarza dane techniczne połączenia (np. adres IP, czas, adres strony, typ przeglądarki), żeby dostarczyć i zabezpieczyć
+      stronę, na podstawie naszego prawnie uzasadnionego interesu (art. 6 ust. 1 lit. f RODO).</p>
+    <p>Dane mogą trafić poza Europejski Obszar Gospodarczy, w tym do USA, na podstawie programu EU-U.S. Data Privacy Framework
+      (<a href="https://www.dataprivacyframework.gov/list">lista programu</a>), a w razie jego braku standardowych klauzul umownych
+      Komisji Europejskiej (zawartych w umowie powierzenia). Są przechowywane według ustawień usługi Cloudflare, przez czas potrzebny do dostarczenia i zabezpieczenia strony.</p>
 
     <h2>Kontakt e-mail</h2>
-    <p>Jeśli napiszesz do nas na <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>, przetwarzamy Twój adres e-mail i treść wiadomości wyłącznie w celu
-      odpowiedzi (art. 6 ust. 1 lit. f RODO) przez czas potrzebny do załatwienia sprawy, a potem nie dłużej niż 12 miesięcy
-      od ostatniej wiadomości (na wypadek reklamacji lub dalszych pytań). Wiadomości odbiera i obsługuje usługodawca.
-      Prosimy nie przesyłać danych, które nie są potrzebne do rozwiązania sprawy.</p>
-    <p>Adres na domenie noblecode.pl nie ma własnej skrzynki: wiadomości przekazuje do skrzynki usługodawcy usługa
-      <a href="https://developers.cloudflare.com/email-routing/">Cloudflare Email Routing</a>. Przy przekazaniu Cloudflare
-      przetwarza wiadomość oraz jej dane, takie jak adres nadawcy i odbiorcy oraz temat, jako podmiot przetwarzający
-      na zasadach opisanych wyżej (umowa powierzenia, przekazanie poza EOG). Poza Cloudflare i dostawcą skrzynki pocztowej
-      usługodawcy wiadomości nie przekazujemy innym podmiotom.</p>
+    <p>Jeśli napiszesz na <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>, przetwarzamy adres e-mail i treść wiadomości
+      w celu odpowiedzi (art. 6 ust. 1 lit. f RODO), przez czas załatwienia sprawy i potem najwyżej 12 miesięcy. Wiadomości
+      do skrzynki usługodawcy przekazuje <a href="https://developers.cloudflare.com/email-routing/">Cloudflare Email Routing</a>,
+      a przechowuje je dostawca tej skrzynki; obaj działają jako podmioty przetwarzające, na zasadach opisanych wyżej.</p>
 
     <h2>Twoje prawa</h2>
     <p>Przysługuje Ci prawo dostępu, sprostowania, usunięcia, ograniczenia przetwarzania, sprzeciwu oraz skargi do Prezesa
