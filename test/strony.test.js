@@ -191,11 +191,12 @@ test('strona główna: najwyżej 2 zdania w akapicie, skróty rozwinięte, kwota
   assert.match(main, /<a href="#przekroczenie">/);
 });
 
-test('regulamin: faza testowa tylko w pkt 8, opis kursu NBP', () => {
+test('regulamin: pkt 8 o zmianach bez zdania o fazie testowej, opis kursu NBP', () => {
   const reg = readFileSync(join(PUBLIC, 'regulamin/index.html'), 'utf8');
   const pkt8 = reg.indexOf('<h2>8.');
   assert.ok(pkt8 > 0);
-  assert.ok([...reg.matchAll(/fazie testowej/g)].every((m) => m.index > pkt8), 'faza testowa poza pkt 8');
+  assert.ok(!/fazie testowej|wersja testowa/i.test(reg), 'strona jest indeksowana, bez fazy testowej');
+  assert.match(reg.slice(pkt8).replace(/\s+/g, ' '), /<h2>8\. Zmiany Regulaminu<\/h2> <p>O zakończeniu usługi i zmianach niekorzystnych dla użytkownika/);
   assert.match(reg, /może go zmienić albo wpisać sam/);
 });
 
@@ -232,9 +233,9 @@ test('usługodawca: ta sama nazwa w stopce, w regulaminie i w polityce prywatno�
   for (const plik of HTML) {
     assert.ok(readFileSync(plik, 'utf8').includes('Usługodawca: NobleCode Krzysztof Mizgała · '), `${plik}: stopka bez nazwy usługodawcy`);
   }
-  for (const s of ['regulamin', 'prywatnosc']) {
+  for (const [s, wersja] of [['regulamin', '0\\.6'], ['prywatnosc', '0\\.5']]) {
     const t = readFileSync(join(PUBLIC, `${s}/index.html`), 'utf8');
-    assert.match(t, /Wersja:? 0\.5, obowiązuje od dnia publikacji na stronie\./, `${s}: wersja 0.5`);
+    assert.match(t, new RegExp(`Wersja:? ${wersja}, obowiązuje od dnia publikacji na stronie\\.`), `${s}: wersja`);
     assert.ok(t.includes('NobleCode Krzysztof Mizgała, e-mail:'), `${s}: nazwa w treści`);
   }
 });
