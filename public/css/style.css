@@ -345,7 +345,11 @@ li.pozycja > button { grid-column: 1 / -1; justify-self: start; margin-bottom: 1
 }
 #wystawione .przelacznik { margin-top: 14px; }
 .siatka.jedna { grid-template-columns: 1fr; }
-#ksef-skrot { margin: 4px 0 0; }
+/* Stan KSeF wypełnia skrypt po pierwszym malowaniu: rezerwujemy miejsce na tekst (2 linie na telefonie, 3 na
+   bardzo wąskim ekranie, 1 na szerszym), żeby pola niżej się nie przesuwały (przesunięcie układu, CLS). */
+#ksef-skrot { margin: 4px 0 0; min-height: 3em; min-height: 2lh; }
+@media (max-width: 359px) { #ksef-skrot { min-height: 4.5em; min-height: 3lh; } }
+@media (min-width: 720px) { #ksef-skrot { min-height: 1.5em; min-height: 1lh; } }
 #cofnij-utrate { margin: 8px 0 4px; }
 .etykieta { font-weight: 600; margin: 0 0 6px; }
 .wartosc-pola { display: flex; align-items: center; min-height: 48px; margin: 0; font-variant-numeric: tabular-nums; }

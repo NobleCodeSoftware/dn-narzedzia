@@ -548,3 +548,12 @@ test('404.html: noindex, ten sam CSP, nawigacja i stopka, link do ewidencji, bez
   const instrukcja = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
   assert.match(instrukcja, /curl -I https:\/\/dn\.noblecode\.pl\/nie-istnieje/);
 });
+
+test('faktura: miejsce na stan KSeF pod „Kto kupuje” zarezerwowane w CSS (bez przesunięcia układu po wypełnieniu przez skrypt)', () => {
+  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  assert.match(html, /<p id="ksef-skrot" class="podpowiedz status-tekst"><\/p>/, 'tekst wstawia skrypt');
+  const css = readFileSync(join(PUBLIC, 'css/style.css'), 'utf8');
+  assert.match(css, /#ksef-skrot \{[^}]*min-height: 2lh;/, 'telefon: 2 linie');
+  assert.match(css, /@media \(max-width: 359px\) \{ #ksef-skrot \{[^}]*min-height: 3lh;/, 'bardzo wąski ekran: 3 linie');
+  assert.match(css, /@media \(min-width: 720px\) \{ #ksef-skrot \{[^}]*min-height: 1lh;/, 'szerszy ekran: 1 linia');
+});
