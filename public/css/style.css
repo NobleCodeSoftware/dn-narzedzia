@@ -195,6 +195,11 @@ header.site .wrap { align-items: center; }
 .wrap.szeroki { max-width: 960px; }
 h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: none; }
 .podtytul { color: var(--muted); font-size: 0.92rem; margin: -6px 0 12px; }
+/* Okres kwartału („Od … do …, dziś …”) wpisuje skrypt po pierwszym malowaniu: rezerwujemy 2 linie na wąskim ekranie
+   (tekst się łamie zależnie od dat) i 1 linię od 414 px, żeby stan kwartału niżej się nie przesuwał (CLS).
+   Wysokość linii to 1,55 rozmiaru czcionki, stąd zapas w em dla przeglądarek bez jednostki lh. */
+#stan-okres { min-height: 3.1em; min-height: 2lh; }
+@media (min-width: 414px) { #stan-okres { min-height: 1.55em; min-height: 1lh; } }
 header.site .wrap { flex-wrap: nowrap; justify-content: space-between; }
 header.site .brand { white-space: nowrap; }
 h3 { font-size: 1.06rem; margin: 26px 0 8px; }
@@ -347,9 +352,9 @@ li.pozycja > button { grid-column: 1 / -1; justify-self: start; margin-bottom: 1
 .siatka.jedna { grid-template-columns: 1fr; }
 /* Stan KSeF wypełnia skrypt po pierwszym malowaniu: rezerwujemy miejsce na tekst (2 linie na telefonie, 3 na
    bardzo wąskim ekranie, 1 na szerszym), żeby pola niżej się nie przesuwały (przesunięcie układu, CLS). */
-#ksef-skrot { margin: 4px 0 0; min-height: 3em; min-height: 2lh; }
-@media (max-width: 359px) { #ksef-skrot { min-height: 4.5em; min-height: 3lh; } }
-@media (min-width: 720px) { #ksef-skrot { min-height: 1.5em; min-height: 1lh; } }
+#ksef-skrot { margin: 4px 0 0; min-height: 3.1em; min-height: 2lh; }
+@media (max-width: 359px) { #ksef-skrot { min-height: 4.65em; min-height: 3lh; } }
+@media (min-width: 720px) { #ksef-skrot { min-height: 1.55em; min-height: 1lh; } }
 #cofnij-utrate { margin: 8px 0 4px; }
 .etykieta { font-weight: 600; margin: 0 0 6px; }
 .wartosc-pola { display: flex; align-items: center; min-height: 48px; margin: 0; font-variant-numeric: tabular-nums; }

@@ -556,4 +556,32 @@ test('faktura: miejsce na stan KSeF pod „Kto kupuje” zarezerwowane w CSS (be
   assert.match(css, /#ksef-skrot \{[^}]*min-height: 2lh;/, 'telefon: 2 linie');
   assert.match(css, /@media \(max-width: 359px\) \{ #ksef-skrot \{[^}]*min-height: 3lh;/, 'bardzo wąski ekran: 3 linie');
   assert.match(css, /@media \(min-width: 720px\) \{ #ksef-skrot \{[^}]*min-height: 1lh;/, 'szerszy ekran: 1 linia');
+  // zapas w em: wysokość linii to 1,55 rozmiaru czcionki
+  assert.match(css, /#ksef-skrot \{[^}]*min-height: 3\.1em; min-height: 2lh;/);
+  assert.match(css, /@media \(max-width: 359px\) \{ #ksef-skrot \{ min-height: 4\.65em; min-height: 3lh; \} \}/);
+  assert.match(css, /@media \(min-width: 720px\) \{ #ksef-skrot \{ min-height: 1\.55em; min-height: 1lh; \} \}/);
+  assert.match(css, /body \{[^}]*font: 17px\/1\.55 /, 'wysokość linii 1,55, z której liczony jest zapas w em');
+});
+
+test('ewidencja: miejsce na okres kwartału zarezerwowane w CSS (bez przesunięcia stanu kwartału po wypełnieniu przez skrypt)', () => {
+  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  assert.match(html, /<p id="stan-okres" class="podtytul"><\/p>/, 'tekst wstawia skrypt');
+  const css = readFileSync(join(PUBLIC, 'css/style.css'), 'utf8');
+  assert.match(css, /#stan-okres \{ min-height: 3\.1em; min-height: 2lh; \}/, 'wąski ekran: 2 linie');
+  assert.match(css, /@media \(min-width: 414px\) \{ #stan-okres \{ min-height: 1\.55em; min-height: 1lh; \} \}/, 'od 414 px: 1 linia');
+});
+
+test('faktura: pierwsza pozycja w HTML ma ten sam układ co wiersz renderowany przez skrypt (bez przesunięcia układu)', () => {
+  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const lista = /<ol id="pozycje" class="pozycje">([\s\S]*?)<\/ol>/.exec(html)[1];
+  assert.equal([...lista.matchAll(/<li class="pozycja" data-i="0">/g)].length, 1);
+  for (const [id, etykieta] of [['nazwa', 'Pozycja 1: towar lub usługa'], ['ilosc', 'Ilość'], ['jm', 'Jednostka'], ['cena', 'Cena (zł)']]) {
+    assert.ok(lista.includes(`<label for="pozycja-0-${id}">${etykieta}</label><input id="pozycja-0-${id}"`), id);
+  }
+  assert.match(lista, /id="pozycja-0-ilosc" inputmode="decimal" autocomplete="off" value="1"/);
+  assert.match(lista, /id="pozycja-0-jm" maxlength="12" autocomplete="off" value="szt\."/);
+  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  for (const t of ["tekst: `Pozycja ${i + 1}: towar lub usługa`", "tekst: 'Ilość'", "tekst: 'Jednostka'", "tekst: 'Cena (zł)'", "placeholder: i === 0 ? 'np. projekt logo' : null", "value: 'szt.'"]) {
+    assert.ok(kod.includes(t), `skrypt renderuje: ${t}`);
+  }
 });

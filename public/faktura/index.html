@@ -100,7 +100,15 @@
         </div>
 
         <h3>Co sprzedajesz</h3>
-        <ol id="pozycje" class="pozycje"></ol>
+        <!-- Pierwsza pozycja jest w HTML, żeby układ nie przesuwał się, zanim skrypt przejmie listę (ten sam układ co w skrypcie). -->
+        <ol id="pozycje" class="pozycje">
+          <li class="pozycja" data-i="0">
+            <div class="pole pozycja-nazwa"><label for="pozycja-0-nazwa">Pozycja 1: towar lub usługa</label><input id="pozycja-0-nazwa" maxlength="200" autocomplete="off" placeholder="np. projekt logo"></div>
+            <div class="pole"><label for="pozycja-0-ilosc">Ilość</label><input id="pozycja-0-ilosc" inputmode="decimal" autocomplete="off" value="1"></div>
+            <div class="pole"><label for="pozycja-0-jm">Jednostka</label><input id="pozycja-0-jm" maxlength="12" autocomplete="off" value="szt."></div>
+            <div class="pole"><label for="pozycja-0-cena">Cena (zł)</label><input id="pozycja-0-cena" inputmode="decimal" autocomplete="off" placeholder="np. 450"></div>
+          </li>
+        </ol>
         <button type="button" id="dodaj-pozycje" class="drugorzedny maly">Dodaj pozycję</button>
 
         <h3>Daty i numer</h3>
