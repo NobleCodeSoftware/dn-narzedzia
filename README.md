@@ -7,7 +7,7 @@ Bez kont i bez serwera aplikacji: wszystko działa w przeglądarce.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.4. To wersja testowa: strony mają `noindex` (zob. „Wdrożenie”).
+Wersja 0.4. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
@@ -152,8 +152,8 @@ node --test            # Node 20+; bez zależności
 - `test/kalendarz-nbp.test.js`: Wielkanoc, święta 2026–2027, Wigilia wolna od 2025, dzień kursu przy weekendach i świętach, wybór kursu i zapytania NBP (bez sieci), kursy dla wielu wpisów naraz.
 - `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, import, CSV i XLSX (round-trip, ponad 1000 wierszy, pliki z innych programów), ZIP (w tym ochrona przed „bombą ZIP”).
 - `test/faktura.test.js`: numeracja, blokada faktur dla firm od 2027 r., limit 10 000 zł w 2026 r. (równo, +1 grosz, faktury z innych miejsc, utrata prawa w kolejnych miesiącach, osoba prywatna poza limitem), data wystawienia równa dziś, sumy brutto i zaokrąglenia, kwota słownie, NIP i PESEL, elementy faktury, terminy, wydruk bez „null”, ewidencja bez dublowania, zachowanie bez `localStorage`, teksty okien (najwyżej 2 zdania w akapicie).
-- `test/strony.test.js` (metadane): tytuły, opisy, `canonical`, Open Graph, JSON-LD (tylko `/` i `/faktura/`, poprawny JSON, bez `aggregateRating` i `review`), spójność plików w `indeksowanie/`, strona `404.html` (noindex, bez `canonical` i JSON-LD).
-- `test/strony.test.js`: higiena stron: `noindex`, meta CSP zgodny z `_headers` (`connect-src` tylko `'self'` i api.nbp.pl), stopka, brak skryptów (poza blokiem danych `application/ld+json`), stylów i handlerów inline, brak zewnętrznych zasobów, w JS jedyny adres to API NBP w `nbp.js`, brak `document.cookie`/`innerHTML`, `localStorage` tylko w `magazyn.js`, `fetch` tylko w widoku ewidencji, etykiety pól i jeden region `aria-live`, strony prawne krótkie w porównaniu ze stronami funkcji (najwyżej 1,5× słów), brak odwołań do usuniętych stron, sekcja KSeF ≤ 150 słów, jedna akcja pobrania arkusza, arkusz bez makr i łączy, `_redirects` tylko stałe, w HTML jedyny adres e-mail to `kontakt@noblecode.pl`.
+- `test/strony.test.js` (metadane): tytuły, opisy, `canonical`, Open Graph, JSON-LD (tylko `/` i `/faktura/`, poprawny JSON, bez `aggregateRating` i `review`), mapa strony (`sitemap.xml`: adresy kanoniczne, aktualne `lastmod`) i `robots.txt`, strona `404.html` (noindex, bez `canonical` i JSON-LD).
+- `test/strony.test.js`: higiena stron: brak `noindex` na stronach z treścią i `noindex` na 404, nagłówki `X-Robots-Tag` w `_headers`, meta CSP zgodny z `_headers` (`connect-src` tylko `'self'` i api.nbp.pl), stopka, brak skryptów (poza blokiem danych `application/ld+json`), stylów i handlerów inline, brak zewnętrznych zasobów, w JS jedyny adres to API NBP w `nbp.js`, brak `document.cookie`/`innerHTML`, `localStorage` tylko w `magazyn.js`, `fetch` tylko w widoku ewidencji, etykiety pól i jeden region `aria-live`, strony prawne krótkie w porównaniu ze stronami funkcji (najwyżej 1,5× słów), brak odwołań do usuniętych stron, sekcja KSeF ≤ 150 słów, jedna akcja pobrania arkusza, arkusz bez makr i łączy, `_redirects` tylko stałe, w HTML jedyny adres e-mail to `kontakt@noblecode.pl`.
 - Przed publikacją: `npm run check:publish` kończy się błędem, gdy w `public/` został placeholder `{{...}}` albo znacznik `[DO-UZUPEŁNIENIA…]` (miejsce w tekście do uzupełnienia).
 
 CI: `.github/workflows/ci.yml` uruchamia `node --test` na Node 20 i 22 (push do `main` i pull requesty).
@@ -162,9 +162,10 @@ CI: `.github/workflows/ci.yml` uruchamia `node --test` na Node 20 i 22 (push do 
 
 ```
 public/                    gotowa strona (Cloudflare Pages, katalog wyjściowy)
-  _headers                 nagłówki HTTP: CSP, noindex, nosniff; arkusz zawsze jako załącznik
+  _headers                 nagłówki HTTP: CSP, nosniff; noindex tylko dla pliku XLSX i adresów *.pages.dev; arkusz zawsze jako załącznik
   _redirects               stałe przekierowania dawnych podstron
-  robots.txt
+  robots.txt               crawl dozwolony, adres mapy strony
+  sitemap.xml              mapa strony: pięć adresów kanonicznych
   index.html               ewidencja, szybkie sprawdzenie, arkusz, źródła, KSeF
   faktura/index.html       faktura bez VAT (zwolnienie)
   css/style.css, css/druk.css
@@ -172,7 +173,6 @@ public/                    gotowa strona (Cloudflare Pages, katalog wyjściowy)
   pobierz/arkusz-limit-dn.xlsx   arkusz do pobrania i wzór eksportu (generowany)
   regulamin/, prywatnosc/, o-nas/
   404.html                 strona „Nie ma takiej strony” (noindex); bez niej Cloudflare Pages zwraca stronę główną z kodem 200
-indeksowanie/              pliki do włączenia indeksowania (poza public/, niepublikowane)
 scripts/arkusz.py          generator i kontrola arkusza (openpyxl)
 scripts/sprawdz-publikacje.mjs   kontrola przed publikacją
 test/                      testy node:test
@@ -181,11 +181,21 @@ test/                      testy node:test
 ## Wdrożenie (Cloudflare Pages)
 
 - Build command: brak. Output directory: `public`.
-- `public/_headers` ustawia CSP (z `frame-ancestors`), `X-Robots-Tag: noindex`, `nosniff`, `Referrer-Policy` i `Permissions-Policy`,
-  a dla `/pobierz/*` typ pliku XLSX i `Content-Disposition: attachment`. Meta CSP w każdym HTML musi być taki sam (pilnuje tego test).
-- Wersja testowa ma `noindex` w meta `robots` i w nagłówku `X-Robots-Tag`. `robots.txt` pozwala na crawl, żeby wyszukiwarki widziały `noindex`.
-  Pliki do włączenia indeksowania (`_headers`, `robots.txt`, `sitemap.xml`) i ich opis są w
-  [`indeksowanie/`](indeksowanie/README.md); nie trafiają do `public/`, dopóki strony mają `noindex`.
+- `public/_headers` ustawia CSP (z `frame-ancestors`), `nosniff`, `Referrer-Policy` i `Permissions-Policy`,
+  a dla `/pobierz/*` typ pliku XLSX, `Content-Disposition: attachment` i `X-Robots-Tag: noindex`. Meta CSP w każdym HTML
+  musi być taki sam (pilnuje tego test).
+- Indeksowanie: strony z treścią nie mają `noindex`, a reguła `/*` w `_headers` nie ma `X-Robots-Tag` (Cloudflare łączy
+  nagłówki z kilku pasujących reguł). `noindex` mają tylko `404.html`, plik XLSX i adresy `*.pages.dev`, żeby w wynikach
+  był wyłącznie `dn.noblecode.pl`. `robots.txt` pozwala na crawl całej strony i wskazuje `sitemap.xml`; `lastmod` w mapie
+  to data ostatniej zmiany pliku HTML (`git log -1 --format=%cs -- public/…/index.html`), więc przy zmianie strony
+  zmień też mapę.
+- Sprawdzenie po wdrożeniu (`curl -I`):
+  - `https://dn.noblecode.pl/` i `https://dn.noblecode.pl/faktura/`: 200, bez `X-Robots-Tag`;
+  - `https://dn.noblecode.pl/pobierz/arkusz-limit-dn.xlsx`: `X-Robots-Tag: noindex`;
+  - `https://dn-narzedzia.pages.dev/`: `X-Robots-Tag: noindex`;
+  - `/faktura` → `/faktura/`, `/index.html` → `/`, `/ewidencja/` → `/` (301), `http://` → `https://`;
+  - `https://dn.noblecode.pl/robots.txt` i `https://dn.noblecode.pl/sitemap.xml`: 200;
+  - `curl -I https://dn.noblecode.pl/nie-istnieje`: 404 (strona `404.html`, a nie strona główna z kodem 200).
 - Metadane wyszukiwarek: każda strona ma `<title>`, `description`, Open Graph (bez obrazu) i `link rel="canonical"`
   na `https://dn.noblecode.pl/…`. Strona główna i `/faktura/` mają dane strukturalne JSON-LD (`WebSite`
   i `WebApplication`) w bloku `<script type="application/ld+json">`: przeglądarka go nie wykonuje, więc CSP zostaje

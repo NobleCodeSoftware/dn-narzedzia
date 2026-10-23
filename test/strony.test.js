@@ -1,4 +1,4 @@
-// Higiena stron: noindex, ścisły CSP, stopka, brak zewnętrznych skryptów,
+// Higiena stron: robots (noindex tylko na 404), ścisły CSP, stopka, brak zewnętrznych skryptów,
 // brak skryptów i stylów inline, brak ciasteczek.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -90,8 +90,10 @@ test('_redirects: tylko stałe przekierowania usuniętych podstron na stronę g�
 for (const plik of HTML) {
   const nazwa = relative(PUBLIC, plik);
   const html = readFileSync(plik, 'utf8');
-  test(`${nazwa}: noindex, CSP, stopka, bez inline i zewnętrznych skryptów`, () => {
-    assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
+  test(`${nazwa}: robots, CSP, stopka, bez inline i zewnętrznych skryptów`, () => {
+    // Strony z treścią są indeksowane; noindex ma tylko strona 404.
+    if (nazwa === '404.html') assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
+    else assert.ok(!/<meta name="robots"[^>]*noindex/i.test(html), 'noindex na stronie indeksowanej');
     const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html);
     assert.ok(csp, 'brak meta CSP');
     assert.equal(`${csp[1]}; frame-ancestors 'none'`, cspNaglowek, 'meta CSP różni się od _headers');
@@ -111,8 +113,16 @@ for (const plik of HTML) {
   });
 }
 
-test('_headers: noindex, nosniff, frame-ancestors', () => {
-  assert.match(naglowki, /X-Robots-Tag: noindex, nofollow/);
+const blokiNaglowkow = naglowki.split(/\n(?=\S)/).filter((b) => !b.startsWith('#'));
+const blokNaglowkow = (sciezka) => blokiNaglowkow.find((b) => b.split('\n')[0].trim() === sciezka) ?? '';
+
+test('_headers: strony indeksowane, noindex dla pliku XLSX i adresów pages.dev, nosniff, frame-ancestors', () => {
+  // Cloudflare łączy nagłówki z kilku pasujących reguł, więc reguła /* nie może mieć X-Robots-Tag.
+  assert.ok(!/X-Robots-Tag/.test(blokNaglowkow('/*')), 'reguła /* bez X-Robots-Tag');
+  assert.match(blokNaglowkow('/pobierz/*'), /X-Robots-Tag: noindex/);
+  assert.match(blokNaglowkow('https://:project.pages.dev/*'), /X-Robots-Tag: noindex/);
+  assert.match(blokNaglowkow('https://:version.:project.pages.dev/*'), /X-Robots-Tag: noindex/);
+  assert.match(blokNaglowkow('/*'), /Content-Security-Policy: /);
   assert.match(naglowki, /X-Content-Type-Options: nosniff/);
   assert.match(cspNaglowek, /frame-ancestors 'none'/);
   assert.match(cspNaglowek, /^default-src 'none';/);
@@ -468,7 +478,7 @@ test('metadane wyszukiwarek: tytuł, opis, canonical i Open Graph na każdej str
     assert.equal(meta(html, /<meta property="og:site_name" content="([^"]+)">/), 'Narzędziownik DN');
     assert.ok(!/og:image|twitter:/.test(html), `${plik}: bez og:image i twitter:*`);
     assert.ok(html.indexOf('rel="canonical"') < html.indexOf('rel="stylesheet"'), `${plik}: canonical przed CSS`);
-    assert.match(html, /<meta name="robots" content="noindex, nofollow">/, `${plik}: noindex na stronie`);
+    assert.ok(!/noindex/i.test(html), `${plik}: strona indeksowana, bez noindex`);
   }
 });
 
@@ -501,25 +511,22 @@ test('dane strukturalne: JSON-LD tylko na stronie głównej i stronie faktury, p
   assert.equal(faktura.url, `${BAZA}/faktura/`);
 });
 
-test('pliki do włączenia indeksowania (indeksowanie/): mapa z adresami kanonicznymi, robots z mapą, nagłówki bez noindex na stronach', () => {
-  const INDEKSOWANIE = fileURLToPath(new URL('../indeksowanie/', import.meta.url));
-  const mapa = readFileSync(join(INDEKSOWANIE, 'sitemap.xml'), 'utf8');
-  const loc = [...mapa.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).sort();
-  assert.deepEqual(loc, Object.values(METADANE).map(([s]) => BAZA + s).sort(), 'każdy adres w mapie ma stronę z takim canonical');
-  for (const [, d] of mapa.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)) assert.match(d, /^\d{4}-\d{2}-\d{2}$/);
-  assert.match(readFileSync(join(INDEKSOWANIE, 'robots.txt'), 'utf8'), /^Sitemap: https:\/\/dn\.noblecode\.pl\/sitemap\.xml$/m);
-  const h = readFileSync(join(INDEKSOWANIE, '_headers'), 'utf8');
-  const bloki = h.split(/\n(?=\S)/).filter((b) => !b.startsWith('#'));
-  const blok = (sciezka) => bloki.find((b) => b.split('\n')[0].trim() === sciezka) ?? '';
-  assert.ok(!/X-Robots-Tag/.test(blok('/*')), 'reguła /* bez X-Robots-Tag');
-  assert.match(blok('/*'), /Content-Security-Policy: /);
-  assert.equal(/Content-Security-Policy: (.+)/.exec(blok('/*'))[1].trim(), cspNaglowek, 'ten sam CSP co w public/_headers');
-  assert.match(blok('/pobierz/*'), /X-Robots-Tag: noindex/);
-  assert.match(blok('https://:project.pages.dev/*'), /X-Robots-Tag: noindex/);
-  assert.match(blok('https://:version.:project.pages.dev/*'), /X-Robots-Tag: noindex/);
-  // pliki z indeksowanie/ nie są publikowane
-  assert.throws(() => readFileSync(join(PUBLIC, 'sitemap.xml')));
-  assert.ok(!/Sitemap:/.test(readFileSync(join(PUBLIC, 'robots.txt'), 'utf8')));
+test('mapa strony i robots.txt: każdy adres kanoniczny w mapie, aktualne lastmod, robots wskazuje mapę', () => {
+  const mapa = readFileSync(join(PUBLIC, 'sitemap.xml'), 'utf8');
+  assert.match(mapa, /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
+  const wpisy = [...mapa.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/url>/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(wpisy.map(([l]) => l).sort(), Object.values(METADANE).map(([s]) => BAZA + s).sort(), 'każda strona z treścią w mapie, z takim samym canonical');
+  const dzis = new Date().toISOString().slice(0, 10);
+  for (const [loc, d] of wpisy) {
+    assert.match(d, /^\d{4}-\d{2}-\d{2}$/, loc);
+    assert.ok(d >= '2026-10-23' && d <= dzis, `${loc}: lastmod ${d}`);
+  }
+  assert.ok(!/404/.test(mapa), 'bez strony 404');
+  const robots = readFileSync(join(PUBLIC, 'robots.txt'), 'utf8');
+  assert.match(robots, /^User-agent: \*$/m);
+  assert.match(robots, /^Allow: \/$/m);
+  assert.ok(!/Disallow/.test(robots), 'roboty widzą /js/, /css/ i noindex pliku XLSX');
+  assert.match(robots, /^Sitemap: https:\/\/dn\.noblecode\.pl\/sitemap\.xml$/m);
 });
 
 // ---------------------------------------------------------------- strona 404
@@ -537,6 +544,6 @@ test('404.html: noindex, ten sam CSP, nawigacja i stopka, link do ewidencji, bez
     const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
     assert.ok(1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length <= 2, tekst);
   }
-  const instrukcja = readFileSync(fileURLToPath(new URL('../indeksowanie/README.md', import.meta.url)), 'utf8');
+  const instrukcja = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
   assert.match(instrukcja, /curl -I https:\/\/dn\.noblecode\.pl\/nie-istnieje/);
 });

@@ -1,4 +1,4 @@
-# Wersja testowa: strony mają noindex (meta i X-Robots-Tag). Crawl jest dozwolony,
-# żeby wyszukiwarki widziały noindex. Mapa strony pojawi się po włączeniu indeksowania.
 User-agent: *
 Allow: /
+
+Sitemap: https://dn.noblecode.pl/sitemap.xml
