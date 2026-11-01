@@ -109,4 +109,15 @@ function naBiezaco() {
 pole.addEventListener('input', naBiezaco);
 wyborKwartalu.addEventListener('change', naBiezaco);
 
+// Jeśli użytkownik sam wybrał kwartał, wybór zostaje. Jeśli nie, po powrocie na kartę z nowym dniem
+// (np. 1 stycznia albo 1 kwietnia) lista przechodzi na bieżący kwartał i limit właściwego roku.
+let kwartalRecznie = false;
+wyborKwartalu.addEventListener('change', () => { kwartalRecznie = true; });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || kwartalRecznie) return;
+  const poprzedni = wyborKwartalu.value;
+  ustawBiezacyKwartal();
+  if (wyborKwartalu.value !== poprzedni) naBiezaco();
+});
+
 ustawBiezacyKwartal();

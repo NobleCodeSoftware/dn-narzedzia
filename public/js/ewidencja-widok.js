@@ -808,6 +808,15 @@ function start() {
     if (!stan.pamietaj && !stan.przyklad && stan.wpisy.length && stan.zmianyOdZapisuPliku) ev.preventDefault();
   });
 
+  // Po powrocie na kartę z nowym dniem (np. po północy 31 grudnia) stan kwartału, limit roku i prognoza
+  // liczą się od nowej daty, a nie od dnia otwarcia strony.
+  let dzienWidoku = dzis();
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || dzis() === dzienWidoku) return;
+    dzienWidoku = dzis();
+    odswiez();
+  });
+
   odswiez();
   odswiezPodglad();
 }

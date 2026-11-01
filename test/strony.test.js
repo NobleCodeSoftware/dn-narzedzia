@@ -517,7 +517,8 @@ test('mapa strony i robots.txt: każdy adres kanoniczny w mapie, aktualne lastmo
   assert.match(mapa, /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
   const wpisy = [...mapa.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/url>/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(wpisy.map(([l]) => l).sort(), Object.values(METADANE).map(([s]) => BAZA + s).sort(), 'każda strona z treścią w mapie, z takim samym canonical');
-  const dzis = new Date().toISOString().slice(0, 10);
+  // Dzisiejsza data w Warszawie, nie w UTC: zmiana zapisana tuż po północy ma już nową datę.
+  const dzis = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
   for (const [loc, d] of wpisy) {
     assert.match(d, /^\d{4}-\d{2}-\d{2}$/, loc);
     assert.ok(d >= '2026-10-23' && d <= dzis, `${loc}: lastmod ${d}`);
