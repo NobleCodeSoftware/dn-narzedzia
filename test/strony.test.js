@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 
+// Pliki tekstowe czytamy z końcami wierszy LF, żeby testy dawały ten sam wynik także w kopii z CRLF
+// (np. po pobraniu repozytorium na Windows z core.autocrlf=true).
+const czytaj = (plik) => readFileSync(plik, 'utf8').replace(/\r\n/g, '\n');
+
 function pliki(katalog, rozszerzenie) {
   return readdirSync(katalog).flatMap((n) => {
     const p = join(katalog, n);
@@ -19,7 +23,7 @@ function pliki(katalog, rozszerzenie) {
 const HTML = pliki(PUBLIC, '.html');
 const JS = pliki(PUBLIC, '.js');
 const STOPKA = 'Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego';
-const naglowki = readFileSync(join(PUBLIC, '_headers'), 'utf8');
+const naglowki = czytaj(join(PUBLIC, '_headers'));
 const cspNaglowek = /Content-Security-Policy: (.+)/.exec(naglowki)[1].trim();
 
 test('są wszystkie strony', () => {
@@ -31,20 +35,20 @@ test('są wszystkie strony', () => {
 // (wzór arkusza z /pobierz/ i kurs NBP przez nbp.js).
 test('bez linków do usuniętych podstron, pamięć i sieć tylko w wyznaczonych modułach', () => {
   for (const plik of [...HTML, ...JS]) {
-    const tresc = readFileSync(plik, 'utf8');
+    const tresc = czytaj(plik);
     const nazwa = relative(PUBLIC, plik).replaceAll('\\', '/');
     assert.ok(!/ewidencja-sprzedazy|\/limit-dzialalnosc-nierejestrowana\/|\/ksef-2027-dzialalnosc/.test(tresc), `${plik}: odwołanie do usuniętej strony`);
     assert.ok(!/sessionStorage|indexedDB|XMLHttpRequest|WebSocket|sendBeacon/.test(tresc), `${plik}: niedozwolone API`);
     if (nazwa !== 'js/magazyn.js' && plik.endsWith('.js')) assert.ok(!/localStorage/.test(tresc), `${plik}: localStorage poza magazyn.js`);
     if (nazwa !== 'js/ewidencja-widok.js') assert.ok(!/\bfetch\(/.test(tresc), `${plik}: fetch poza widokiem ewidencji`);
   }
-  const widok = readFileSync(join(PUBLIC, 'js/ewidencja-widok.js'), 'utf8');
+  const widok = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
   for (const [, cel] of widok.matchAll(/fetch\(([^,)]+)/g)) assert.ok(["'/pobierz/arkusz-limit-dn.xlsx'", '...a'].includes(cel.trim()), `fetch do ${cel}`);
 });
 
 // Stroną główną jest ewidencja, licznik to drugorzędne „Szybkie sprawdzenie” niżej.
 test('strona główna: ewidencja na górze, licznik niżej, sekcja KSeF ze źródłami, jedna akcja „Pobierz arkusz”', () => {
-  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'index.html'));
   assert.match(html, /<h1>Ewidencja sprzedaży i limit działalności nierejestrowanej<\/h1>/);
   assert.ok(html.indexOf('id="stan"') < html.indexOf('id="wpis-form"'), 'stan kwartału przed formularzem');
   assert.ok(html.indexOf('id="pliki"') < html.indexOf('id="licznik"'), 'licznik pod ewidencją');
@@ -54,7 +58,7 @@ test('strona główna: ewidencja na górze, licznik niżej, sekcja KSeF ze źró
   assert.ok(!/Licznik/.test(nav), 'licznik nie jest w nawigacji');
   // nawigacja „Ewidencja, Faktura” na każdej stronie
   for (const plik of HTML) {
-    const n = /<nav class="nawigacja"[^>]*>([\s\S]*?)<\/nav>/.exec(readFileSync(plik, 'utf8'))[1];
+    const n = /<nav class="nawigacja"[^>]*>([\s\S]*?)<\/nav>/.exec(czytaj(plik))[1];
     assert.deepEqual([...n.matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((m) => [m[1], m[2]]), [['/', 'Ewidencja'], ['/faktura/', 'Faktura']], plik);
   }
   assert.match(html, /10&nbsp;813,50/);
@@ -82,14 +86,14 @@ test('arkusz XLSX: jest, to ZIP, bez makr i łączy zewnętrznych', () => {
 });
 
 test('_redirects: tylko stałe przekierowania usuniętych podstron na stronę główną', () => {
-  const linie = readFileSync(join(PUBLIC, '_redirects'), 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#'));
+  const linie = czytaj(join(PUBLIC, '_redirects')).split('\n').filter((l) => l.trim() && !l.startsWith('#'));
   assert.ok(linie.length > 0);
   for (const l of linie) assert.match(l, /^\/[a-z0-9-]+\/? \/(#[a-z]+)? 301$/, l);
 });
 
 for (const plik of HTML) {
   const nazwa = relative(PUBLIC, plik);
-  const html = readFileSync(plik, 'utf8');
+  const html = czytaj(plik);
   test(`${nazwa}: robots, CSP, stopka, bez inline i zewnętrznych skryptów`, () => {
     // Strony z treścią są indeksowane; noindex ma tylko strona 404.
     if (nazwa === '404.html') assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
@@ -133,7 +137,7 @@ test('_headers: strony indeksowane, noindex dla pliku XLSX i adresów pages.dev,
 
 test('JS: brak ciasteczek, eval i zewnętrznych adresów', () => {
   for (const plik of JS) {
-    const kod = readFileSync(plik, 'utf8');
+    const kod = czytaj(plik);
     assert.ok(!/document\.cookie/.test(kod), `${plik}: document.cookie`);
     assert.ok(!/\beval\(|new Function\(/.test(kod), `${plik}: eval`);
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML/.test(kod), `${plik}: wstrzykiwanie HTML`);
@@ -149,11 +153,11 @@ const EMAIL_KONTAKTOWY = 'kontakt@noblecode.pl';
 const ADRES_EMAIL = /[A-Za-z0-9._%+-]+(?:@|%40|&#0*64;|&#x0*40;|&commat;)[A-Za-z0-9.-]+\.[A-Za-z]{2,}/gi;
 
 test('strony prawne: dane usługodawcy, w HTML tylko adres kontaktowy', () => {
-  const onas = readFileSync(join(PUBLIC, 'o-nas/index.html'), 'utf8');
+  const onas = czytaj(join(PUBLIC, 'o-nas/index.html'));
   assert.ok(onas.includes('<strong>Usługodawca:</strong> NobleCode Krzysztof Mizgała<br>'), 'nazwa usługodawcy');
   assert.ok(onas.includes(`<strong>E-mail:</strong> <a href="mailto:${EMAIL_KONTAKTOWY}">${EMAIL_KONTAKTOWY}</a>`), 'pole e-mail');
   for (const plik of HTML) {
-    const html = readFileSync(plik, 'utf8');
+    const html = czytaj(plik);
     assert.ok(html.includes(`<a href="mailto:${EMAIL_KONTAKTOWY}">${EMAIL_KONTAKTOWY}</a>`), `${plik}: brak adresu kontaktowego`);
     for (const [adres] of html.matchAll(ADRES_EMAIL)) {
       assert.equal(adres.replace(/^mailto:/i, ''), EMAIL_KONTAKTOWY, `${plik}: niedozwolony adres e-mail ${adres}`);
@@ -175,7 +179,7 @@ test('wykrywanie adresów e-mail: dopuszcza tylko adres kontaktowy', () => {
 
 // Czytelność: krótkie akapity, rozwinięte skróty, link do sekcji o przekroczeniu, kontrast AA.
 test('strona główna: najwyżej 2 zdania w akapicie, skróty rozwinięte, kwota limitu pod tytułem', () => {
-  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'index.html'));
   const main = html.slice(html.indexOf('<main'), html.indexOf('</main>'));
   for (const [, blok] of main.matchAll(/<(?:p|dd|li)\b[^>]*>([\s\S]*?)<\/(?:p|dd|li)>/g)) {
     const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
@@ -192,7 +196,7 @@ test('strona główna: najwyżej 2 zdania w akapicie, skróty rozwinięte, kwota
 });
 
 test('regulamin: pkt 8 o zmianach bez zdania o fazie testowej, opis kursu NBP', () => {
-  const reg = readFileSync(join(PUBLIC, 'regulamin/index.html'), 'utf8');
+  const reg = czytaj(join(PUBLIC, 'regulamin/index.html'));
   const pkt8 = reg.indexOf('<h2>8.');
   assert.ok(pkt8 > 0);
   assert.ok(!/fazie testowej|wersja testowa/i.test(reg), 'strona jest indeksowana, bez fazy testowej');
@@ -208,7 +212,7 @@ function luminancja(hex) {
 const kontrast = (a, b) => { const [x, y] = [luminancja(a), luminancja(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
 
 test('CSS: kontrast progów ≥ 4,5:1 i obramowania pól ≥ 3:1 w obu motywach', () => {
-  const css = readFileSync(join(PUBLIC, 'css/style.css'), 'utf8');
+  const css = czytaj(join(PUBLIC, 'css/style.css'));
   const motyw = (blok) => Object.fromEntries([...blok.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
   const jasny = motyw(css.slice(0, css.indexOf('@media (prefers-color-scheme: dark)')));
   const ciemny = { ...jasny, ...motyw(css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf('* {'))) };
@@ -222,7 +226,7 @@ test('CSS: kontrast progów ≥ 4,5:1 i obramowania pól ≥ 3:1 w obu motywach'
 });
 
 test('strona główna: wynik bez aria-live, ogłoszenia tylko przez osobny region', () => {
-  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'index.html'));
   assert.match(html, /<div id="wynik" class="wynik" hidden>/);
   assert.equal([...html.matchAll(/aria-live=/g)].length, 1, 'jeden region aria-live');
   assert.match(html, /<p id="ogloszenie" class="sr-only" aria-live="polite" aria-atomic="true"><\/p>/);
@@ -231,10 +235,10 @@ test('strona główna: wynik bez aria-live, ogłoszenia tylko przez osobny regio
 // Oznaczenie usługodawcy: ta sama nazwa w stopce każdej strony, w regulaminie i w polityce prywatności.
 test('usługodawca: ta sama nazwa w stopce, w regulaminie i w polityce prywatności', () => {
   for (const plik of HTML) {
-    assert.ok(readFileSync(plik, 'utf8').includes('Usługodawca: NobleCode Krzysztof Mizgała · '), `${plik}: stopka bez nazwy usługodawcy`);
+    assert.ok(czytaj(plik).includes('Usługodawca: NobleCode Krzysztof Mizgała · '), `${plik}: stopka bez nazwy usługodawcy`);
   }
   for (const [s, wersja] of [['regulamin', '0\\.6'], ['prywatnosc', '0\\.5']]) {
-    const t = readFileSync(join(PUBLIC, `${s}/index.html`), 'utf8');
+    const t = czytaj(join(PUBLIC, `${s}/index.html`));
     assert.match(t, new RegExp(`Wersja:? ${wersja}, obowiązuje od dnia publikacji na stronie\\.`), `${s}: wersja`);
     assert.ok(t.includes('NobleCode Krzysztof Mizgała, e-mail:'), `${s}: nazwa w treści`);
   }
@@ -272,14 +276,14 @@ export function widocznyTekst(html) {
 const slowa = (html) => widocznyTekst(html).split(/\s+/).filter((w) => /[\p{L}\d]/u.test(w)).length;
 
 test('_redirects: stary adres /ewidencja/ prowadzi na stronę główną, katalogu nie ma (bez pętli)', () => {
-  const r = readFileSync(join(PUBLIC, '_redirects'), 'utf8');
+  const r = czytaj(join(PUBLIC, '_redirects'));
   assert.match(r, /^\/ewidencja\/ \/ 301$/m);
   assert.ok(!HTML.some((p) => relative(PUBLIC, p).startsWith('ewidencja')), 'katalog ewidencja/ nie istnieje');
-  for (const p of HTML) assert.ok(!/href="\/ewidencja\//.test(readFileSync(p, 'utf8')), `${p}: link do /ewidencja/`);
+  for (const p of HTML) assert.ok(!/href="\/ewidencja\//.test(czytaj(p)), `${p}: link do /ewidencja/`);
 });
 
 test('widok ewidencji: replaceChildren tylko przez zastap() (bez „null” na stronie i w wydruku)', () => {
-  const kod = readFileSync(join(PUBLIC, 'js/ewidencja-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
   const wywolania = [...kod.matchAll(/\.replaceChildren\(/g)];
   assert.equal(wywolania.length, 1, 'jedno wywołanie, w zastap()');
   assert.match(kod, /function zastap\(rodzic, \.\.\.dzieci\) \{\n {2}rodzic\.replaceChildren\(\.\.\.dzieci\.flat\(\)\.filter\(\(d\) => d !== null && d !== undefined && d !== false\)\);/);
@@ -287,7 +291,7 @@ test('widok ewidencji: replaceChildren tylko przez zastap() (bez „null” na s
 });
 
 test('ewidencja: najwyżej 2 zdania w akapicie, etykiety pól, jeden region aria-live, wydruk w osobnym CSS', () => {
-  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'index.html'));
   for (const [, blok] of tekstMain(html).matchAll(/<(?:p|dd|li)\b[^>]*>([\s\S]*?)<\/(?:p|dd|li)>/g)) {
     const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
     const zdania = 1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length;
@@ -303,7 +307,7 @@ test('ewidencja: najwyżej 2 zdania w akapicie, etykiety pól, jeden region aria
 });
 
 test('ewidencja: sekcja po przekroczeniu z 7 dniami, linkami do biznes.gov.pl i ZUS, bez liczenia podatku', () => {
-  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'index.html'));
   const s = html.slice(html.indexOf('id="przekroczenie"'), html.indexOf('</section>', html.indexOf('id="przekroczenie"')));
   assert.match(s, /7 dni/);
   assert.match(s, /href="https:\/\/www\.biznes\.gov\.pl\//);
@@ -313,13 +317,13 @@ test('ewidencja: sekcja po przekroczeniu z 7 dniami, linkami do biznes.gov.pl i 
 });
 
 test('strony prawne krótkie w porównaniu ze stronami funkcji (najwyżej 1,5× słów)', () => {
-  const funkcje = ['index.html', 'faktura/index.html'].reduce((s, p) => s + slowa(readFileSync(join(PUBLIC, p), 'utf8')), 0);
-  const prawne = ['regulamin/index.html', 'prywatnosc/index.html', 'o-nas/index.html'].reduce((s, p) => s + slowa(readFileSync(join(PUBLIC, p), 'utf8')), 0);
+  const funkcje = ['index.html', 'faktura/index.html'].reduce((s, p) => s + slowa(czytaj(join(PUBLIC, p))), 0);
+  const prawne = ['regulamin/index.html', 'prywatnosc/index.html', 'o-nas/index.html'].reduce((s, p) => s + slowa(czytaj(join(PUBLIC, p))), 0);
   assert.ok(prawne <= 1.5 * funkcje, `prawne ${prawne} słów, funkcje ${funkcje} słów (${(prawne / funkcje).toFixed(2)}×)`);
 });
 
 test('polityka prywatności opisuje pamięć przeglądarki i zapytanie do NBP (tylko waluta i data)', () => {
-  const pol = readFileSync(join(PUBLIC, 'prywatnosc/index.html'), 'utf8');
+  const pol = czytaj(join(PUBLIC, 'prywatnosc/index.html'));
   assert.match(pol, /<h2>Pamięć przeglądarki<\/h2>/);
   assert.match(pol, /localStorage/);
   assert.match(pol, /Wyczyść dane/);
@@ -330,7 +334,7 @@ test('polityka prywatności opisuje pamięć przeglądarki i zapytanie do NBP (t
 // ---------------------------------------------------------------- faktura bez VAT (zwolnienie)
 
 test('faktura: najwyżej 2 zdania w akapicie, etykiety pól, jeden region aria-live, jedna główna akcja, wydruk w osobnym CSS', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   for (const [, blok] of tekstMain(html).matchAll(/<(?:p|dd|li)\b[^>]*>([\s\S]*?)<\/(?:p|dd|li)>/g)) {
     const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
     const zdania = 1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length;
@@ -349,7 +353,7 @@ test('faktura: najwyżej 2 zdania w akapicie, etykiety pól, jeden region aria-l
 });
 
 test('faktura: blokada KSeF z odesłaniem do ksef.podatki.gov.pl i źródła z datą (art. 106e, 145m)', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   const blokada = html.slice(html.indexOf('id="ksef-blokada"'), html.indexOf('</div>', html.indexOf('id="ksef-blokada"')));
   assert.match(blokada, /class="ramka alarm"/);
   assert.match(blokada, /href="https:\/\/ksef\.podatki\.gov\.pl\/"/);
@@ -362,7 +366,7 @@ test('faktura: blokada KSeF z odesłaniem do ksef.podatki.gov.pl i źródła z d
 });
 
 test('widok faktury: replaceChildren tylko przez zastap(), bez sieci, localStorage tylko przez magazyn.js', () => {
-  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   assert.equal([...kod.matchAll(/\.replaceChildren\(/g)].length, 1, 'jedno wywołanie, w zastap()');
   assert.match(kod, /function zastap\(rodzic, \.\.\.dzieci\) \{\n {2}rodzic\.replaceChildren\(\.\.\.dzieci\.flat\(\)\.filter\(\(d\) => d !== null && d !== undefined && d !== false\)\);/);
   assert.match(kod, /zastap\(\$\('wydruk'\),/);
@@ -371,8 +375,8 @@ test('widok faktury: replaceChildren tylko przez zastap(), bez sieci, localStora
 });
 
 test('polityka i regulamin opisują fakturę i dane klientów w pamięci przeglądarki', () => {
-  const pol = readFileSync(join(PUBLIC, 'prywatnosc/index.html'), 'utf8').replace(/\s+/g, ' ');
-  const reg = readFileSync(join(PUBLIC, 'regulamin/index.html'), 'utf8').replace(/\s+/g, ' ');
+  const pol = czytaj(join(PUBLIC, 'prywatnosc/index.html')).replace(/\s+/g, ' ');
+  const reg = czytaj(join(PUBLIC, 'regulamin/index.html')).replace(/\s+/g, ' ');
   assert.match(pol, /wystawione faktury, Twoje dane z faktury, dane klientów/);
   assert.match(pol, /Licznik, ewidencja i faktura działają w Twojej przeglądarce/);
   assert.match(reg, /generator faktury bez VAT do wydruku/);
@@ -380,56 +384,56 @@ test('polityka i regulamin opisują fakturę i dane klientów w pamięci przegl�
 });
 
 test('widok faktury liczy regułę od dzisiejszej daty, pamięta utratę prawa i mówi o liczniku bez pamięci', () => {
-  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   assert.match(kod, /normalizujFakture\(wartosciFormularza\(\), \{ dzis: dzis\(\) \}\)/);
   assert.match(kod, /dataWystawienia: dzis\(\), \/\/ datą wystawienia jest zawsze dziś/);
   assert.match(kod, /\$\('data-wystawienia'\)\.textContent = `dziś, \$\{dataPl\(dzis\(\)\)\}`;/);
   assert.match(kod, /ev\.preventDefault\(\);\n\s+odswiezDateWystawienia\(\);/, 'odświeżenie przy wystawieniu');
   assert.match(kod, /addEventListener\('visibilitychange', \(\) => \{ if \(!document\.hidden\) \{ odswiezDateWystawienia\(\);/, 'odświeżenie po powrocie na kartę');
   assert.ok(!/f-data-wystawienia/.test(kod), 'data wystawienia bez pola formularza');
-  assert.match(readFileSync(join(PUBLIC, 'regulamin/index.html'), 'utf8').replace(/\s+/g, ' '), /opierają się na zegarze i danych tej przeglądarki/);
+  assert.match(czytaj(join(PUBLIC, 'regulamin/index.html')).replace(/\s+/g, ' '), /opierają się na zegarze i danych tej przeglądarki/);
   assert.match(kod, /utrataOd: stan\.utrataOd/);
   assert.match(kod, /stan\.utrataOd = polaczUtrate\(stan\.utrataOd, r\.miesiac\)/);
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   assert.match(html, /<p id="ksef-pamiec"[^>]*hidden>Bez pamięci przeglądarki licznik zna tylko faktury z tej wizyty\./);
 });
 
 test('adres sprzedawcy obowiązkowy, tylko firma z Polski, opis utraty prawa do końca 2026 r.', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   assert.match(html, /<label for="f-sprzedawca-adres">Twój adres<\/label>/);
   assert.match(html, /Ustawa o VAT wymaga na fakturze adresu sprzedawcy i nabywcy \(art\. 106e ust\. 1 pkt 3\)\./);
   assert.match(html, /<label for="rodzaj-firma">Firma lub instytucja z Polski \(ma NIP\)<\/label>/);
   assert.match(html.replace(/\s+/g, ' '), /i każdą kolejną fakturę dla firmy do końca 2026 r\. wystawiasz w KSeF/);
   assert.match(html, /\(art\. 106b ust\. 3 pkt 2\)/);
   assert.match(html, /href="https:\/\/ksef\.podatki\.gov\.pl\/konsumenci-i-osoby-fizyczne\/"/);
-  const widok = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const widok = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   assert.ok(!/VIES/.test(widok));
   assert.match(widok, /sprawdzNip\(\$\('f-nabywca-nip'\)\.value, \{ zagraniczny: false \}\)/);
 });
 
 test('stan KSeF pod „Kto kupuje”, potwierdzenie znika po zmianie formularza, nazwa nabywcy bez pola NIP na pełną szerokość', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   const kto = html.slice(html.indexOf('<fieldset class="grupa" id="rodzaj">'), html.indexOf('</fieldset>'));
   assert.match(kto, /<p id="ksef-skrot" class="podpowiedz status-tekst"><\/p>/);
-  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   assert.match(kod, /const schowajPotwierdzenie = \(\) => \{\n\s+\$\('potwierdzenie'\)\.hidden = true;/);
   assert.match(kod, /addEventListener\('input', schowajPotwierdzenie\)/);
   assert.match(kod, /classList\.toggle\('jedna', !firma\)/);
-  assert.match(readFileSync(join(PUBLIC, 'css/style.css'), 'utf8'), /\.siatka\.jedna \{ grid-template-columns: 1fr; \}/);
+  assert.match(czytaj(join(PUBLIC, 'css/style.css')), /\.siatka\.jedna \{ grid-template-columns: 1fr; \}/);
 });
 
 test('etykieta „Twój NIP albo PESEL” z podpowiedzią źródłową, „Wrócę do formularza”', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   assert.match(html, /<label for="f-sprzedawca-nip">Twój NIP albo PESEL<\/label>/);
   // podpowiedź bez żargonu i bez numerów przepisów; źródło jest w sekcji źródeł strony
   assert.match(html, /<p id="id-info" class="podpowiedz">W działalności nierejestrowanej wpisz PESEL\. NIP wpisz tylko wtedy, gdy jesteś zarejestrowany do VAT albo masz kasę fiskalną\.<\/p>/);
   assert.match(html, /href="https:\/\/api\.sejm\.gov\.pl\/eli\/acts\/DU\/2026\/151\/text\.pdf"/);
-  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   assert.match(kod, /tekst: 'Wrócę do formularza'/);
 });
 
 test('błąd znika przy zmianie pola, fokus po oknie limitu na cenie, utratę prawa można cofnąć z potwierdzeniem', () => {
-  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   const schowaj = kod.slice(kod.indexOf('const schowajPotwierdzenie'), kod.indexOf('};', kod.indexOf('const schowajPotwierdzenie')));
   assert.match(schowaj, /\$\('form-blad'\)\.hidden = true;/);
   assert.match(schowaj, /removeAttribute\('aria-invalid'\)/);
@@ -440,7 +444,7 @@ test('błąd znika przy zmianie pola, fokus po oknie limitu na cenie, utratę pr
   assert.match(kod, /zastap\(\$\('dialog-tekst'\), \.\.\.\[tekst\]\.flat\(\)\.map\(\(t\) => el\('p', \{ tekst: t \}\)\)\);/);
   assert.match(kod, /async function zaznaczUtrate\(\) \{[\s\S]*?await zapytaj\(/);
   assert.match(kod, /async function cofnijUtrate\(\) \{[\s\S]*?await zapytaj\([\s\S]*?stan\.utrataOd = null;/);
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   assert.match(html, /<button type="button" id="cofnij-utrate" class="drugorzedny maly" hidden>To była pomyłka: cofnij<\/button>/);
 });
 
@@ -462,7 +466,7 @@ test('metadane wyszukiwarek: tytuł, opis, canonical i Open Graph na każdej str
   // 404.html nie ma adresu kanonicznego ani opisu: sprawdza ją osobny test.
   assert.deepEqual(Object.keys(METADANE).sort(), HTML.map((p) => relative(PUBLIC, p).replaceAll('\\', '/')).filter((p) => p !== '404.html').sort());
   for (const [plik, [sciezka, tytul]] of Object.entries(METADANE)) {
-    const html = readFileSync(join(PUBLIC, plik), 'utf8');
+    const html = czytaj(join(PUBLIC, plik));
     const t = meta(html, /<title>([^<]*)<\/title>/);
     assert.equal(t, tytul, plik);
     assert.ok(t.length <= 65, `${plik}: tytuł ma ${t.length} znaków`);
@@ -485,7 +489,7 @@ test('metadane wyszukiwarek: tytuł, opis, canonical i Open Graph na każdej str
 
 test('dane strukturalne: JSON-LD tylko na stronie głównej i stronie faktury, poprawny JSON, bez ocen i recenzji', () => {
   for (const plik of Object.keys(METADANE)) {
-    const bloki = jsonLd(readFileSync(join(PUBLIC, plik), 'utf8'));
+    const bloki = jsonLd(czytaj(join(PUBLIC, plik)));
     assert.equal(bloki.length, ['index.html', 'faktura/index.html'].includes(plik) ? 1 : 0, plik);
     for (const b of bloki) {
       const dane = JSON.parse(b);
@@ -503,17 +507,17 @@ test('dane strukturalne: JSON-LD tylko na stronie głównej i stronie faktury, p
       }
     }
   }
-  const glowna = JSON.parse(jsonLd(readFileSync(join(PUBLIC, 'index.html'), 'utf8'))[0]);
+  const glowna = JSON.parse(jsonLd(czytaj(join(PUBLIC, 'index.html')))[0]);
   const witryna = glowna['@graph'].find((w) => w['@type'] === 'WebSite');
   assert.deepEqual(witryna, { '@type': 'WebSite', '@id': `${BAZA}/#witryna`, url: `${BAZA}/`, name: 'Narzędziownik DN', alternateName: 'dn.noblecode.pl', inLanguage: 'pl-PL' });
   assert.ok(glowna['@graph'].some((w) => w['@type'] === 'WebApplication' && w.url === `${BAZA}/`));
-  const faktura = JSON.parse(jsonLd(readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8'))[0]);
+  const faktura = JSON.parse(jsonLd(czytaj(join(PUBLIC, 'faktura/index.html')))[0]);
   assert.equal(faktura['@type'], 'WebApplication');
   assert.equal(faktura.url, `${BAZA}/faktura/`);
 });
 
 test('mapa strony i robots.txt: każdy adres kanoniczny w mapie, aktualne lastmod, robots wskazuje mapę', () => {
-  const mapa = readFileSync(join(PUBLIC, 'sitemap.xml'), 'utf8');
+  const mapa = czytaj(join(PUBLIC, 'sitemap.xml'));
   assert.match(mapa, /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
   const wpisy = [...mapa.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/url>/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(wpisy.map(([l]) => l).sort(), Object.values(METADANE).map(([s]) => BAZA + s).sort(), 'każda strona z treścią w mapie, z takim samym canonical');
@@ -524,7 +528,7 @@ test('mapa strony i robots.txt: każdy adres kanoniczny w mapie, aktualne lastmo
     assert.ok(d >= '2026-10-23' && d <= dzis, `${loc}: lastmod ${d}`);
   }
   assert.ok(!/404/.test(mapa), 'bez strony 404');
-  const robots = readFileSync(join(PUBLIC, 'robots.txt'), 'utf8');
+  const robots = czytaj(join(PUBLIC, 'robots.txt'));
   assert.match(robots, /^User-agent: \*$/m);
   assert.match(robots, /^Allow: \/$/m);
   assert.ok(!/Disallow/.test(robots), 'roboty widzą /js/, /css/ i noindex pliku XLSX');
@@ -534,7 +538,7 @@ test('mapa strony i robots.txt: każdy adres kanoniczny w mapie, aktualne lastmo
 // ---------------------------------------------------------------- strona 404
 
 test('404.html: noindex, ten sam CSP, nawigacja i stopka, link do ewidencji, bez canonical, Open Graph i JSON-LD', () => {
-  const html = readFileSync(join(PUBLIC, '404.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, '404.html'));
   // Bez 404.html Cloudflare Pages zwraca na każdy nieistniejący adres stronę główną z kodem 200.
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
   assert.equal(`${/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html)[1]}; frame-ancestors 'none'`, cspNaglowek);
@@ -546,14 +550,14 @@ test('404.html: noindex, ten sam CSP, nawigacja i stopka, link do ewidencji, bez
     const tekst = blok.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
     assert.ok(1 + [...tekst.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length <= 2, tekst);
   }
-  const instrukcja = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+  const instrukcja = czytaj(fileURLToPath(new URL('../README.md', import.meta.url)));
   assert.match(instrukcja, /curl -I https:\/\/dn\.noblecode\.pl\/nie-istnieje/);
 });
 
 test('faktura: miejsce na stan KSeF pod „Kto kupuje” zarezerwowane w CSS (bez przesunięcia układu po wypełnieniu przez skrypt)', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   assert.match(html, /<p id="ksef-skrot" class="podpowiedz status-tekst"><\/p>/, 'tekst wstawia skrypt');
-  const css = readFileSync(join(PUBLIC, 'css/style.css'), 'utf8');
+  const css = czytaj(join(PUBLIC, 'css/style.css'));
   assert.match(css, /#ksef-skrot \{[^}]*min-height: 2lh;/, 'telefon: 2 linie');
   assert.match(css, /@media \(max-width: 359px\) \{ #ksef-skrot \{[^}]*min-height: 3lh;/, 'bardzo wąski ekran: 3 linie');
   assert.match(css, /@media \(min-width: 720px\) \{ #ksef-skrot \{[^}]*min-height: 1lh;/, 'szerszy ekran: 1 linia');
@@ -565,15 +569,15 @@ test('faktura: miejsce na stan KSeF pod „Kto kupuje” zarezerwowane w CSS (be
 });
 
 test('ewidencja: miejsce na okres kwartału zarezerwowane w CSS (bez przesunięcia stanu kwartału po wypełnieniu przez skrypt)', () => {
-  const html = readFileSync(join(PUBLIC, 'index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'index.html'));
   assert.match(html, /<p id="stan-okres" class="podtytul"><\/p>/, 'tekst wstawia skrypt');
-  const css = readFileSync(join(PUBLIC, 'css/style.css'), 'utf8');
+  const css = czytaj(join(PUBLIC, 'css/style.css'));
   assert.match(css, /#stan-okres \{ min-height: 3\.1em; min-height: 2lh; \}/, 'wąski ekran: 2 linie');
   assert.match(css, /@media \(min-width: 414px\) \{ #stan-okres \{ min-height: 1\.55em; min-height: 1lh; \} \}/, 'od 414 px: 1 linia');
 });
 
 test('faktura: pierwsza pozycja w HTML ma ten sam układ co wiersz renderowany przez skrypt (bez przesunięcia układu)', () => {
-  const html = readFileSync(join(PUBLIC, 'faktura/index.html'), 'utf8');
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
   const lista = /<ol id="pozycje" class="pozycje">([\s\S]*?)<\/ol>/.exec(html)[1];
   assert.equal([...lista.matchAll(/<li class="pozycja" data-i="0">/g)].length, 1);
   for (const [id, etykieta] of [['nazwa', 'Pozycja 1: towar lub usługa'], ['ilosc', 'Ilość'], ['jm', 'Jednostka'], ['cena', 'Cena (zł)']]) {
@@ -581,7 +585,7 @@ test('faktura: pierwsza pozycja w HTML ma ten sam układ co wiersz renderowany p
   }
   assert.match(lista, /id="pozycja-0-ilosc" inputmode="decimal" autocomplete="off" value="1"/);
   assert.match(lista, /id="pozycja-0-jm" maxlength="12" autocomplete="off" value="szt\."/);
-  const kod = readFileSync(join(PUBLIC, 'js/faktura-widok.js'), 'utf8');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   for (const t of ["tekst: `Pozycja ${i + 1}: towar lub usługa`", "tekst: 'Ilość'", "tekst: 'Jednostka'", "tekst: 'Cena (zł)'", "placeholder: i === 0 ? 'np. projekt logo' : null", "value: 'szt.'"]) {
     assert.ok(kod.includes(t), `skrypt renderuje: ${t}`);
   }

@@ -1,0 +1,9 @@
+# Pliki tekstowe w repozytorium i w kopii roboczej zawsze z końcami wierszy LF,
+# także na Windows z core.autocrlf=true (_headers, _redirects i sitemap.xml trafiają na serwer bez zmian).
+* text=auto eol=lf
+
+# Pliki binarne bez konwersji.
+*.xlsx binary
+*.png binary
+*.ico binary
+*.woff2 binary
