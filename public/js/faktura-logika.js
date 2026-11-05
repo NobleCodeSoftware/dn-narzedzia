@@ -543,3 +543,13 @@ export function dopiszNabywce(nabywcy, n) {
   const k = klucz(n);
   return [{ rodzaj: n.rodzaj, nazwa: n.nazwa, adres: n.adres, nip: n.nip }, ...nabywcy.filter((x) => klucz(x) !== k)].slice(0, 50);
 }
+
+/**
+ * Faktury z pamięci przeglądarki połączone z fakturami, które były tylko na stronie (np. przy wyłączonej pamięci).
+ * Tę samą fakturę (ten sam numer i treść) zostawiamy raz. Inną fakturę z tym samym numerem też zostawiamy, bo była
+ * już wystawiona: lista ją pokaże, a numeracja liczy się od największego numeru.
+ */
+export function polaczFaktury(zapisane, lokalne) {
+  const znane = new Set(zapisane.map((f) => JSON.stringify(f)));
+  return [...zapisane, ...lokalne.filter((f) => !znane.has(JSON.stringify(f)))];
+}

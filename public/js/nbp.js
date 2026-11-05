@@ -58,9 +58,21 @@ export function wybierzKurs(odpowiedz, plan, dzis) {
   };
 }
 
-/** 4.3641 → "4.3641" (NBP podaje kurs średni z 4 miejscami po przecinku). */
+/**
+ * Kurs z odpowiedzi NBP jako tekst dziesiętny, bez zaokrąglania: 4.4014 → "4.4014", 0.012115 → "0.012115",
+ * 0.00021529 → "0.00021529". Liczba miejsc po przecinku zależy od waluty (np. HUF i IDR mają ich więcej niż 4).
+ * String() daje najkrótszy zapis tej samej liczby, czyli cyfry z odpowiedzi; zapis wykładniczy (np. 2.1529e-7)
+ * zamieniamy na zwykły.
+ */
 export function kursNaTekst(mid) {
-  return Number(mid).toFixed(4);
+  const t = String(Number(mid));
+  const m = /^(\d+)(?:\.(\d+))?e([+-]\d+)$/i.exec(t);
+  if (!m) return t;
+  const cyfry = m[1] + (m[2] ?? '');
+  const wykladnik = Number(m[3]) - (m[2] ?? '').length; // wartość = cyfry × 10^wykladnik
+  if (wykladnik >= 0) return cyfry + '0'.repeat(wykladnik);
+  const a = cyfry.padStart(-wykladnik + 1, '0');
+  return `${a.slice(0, wykladnik)}.${a.slice(wykladnik)}`;
 }
 
 /**

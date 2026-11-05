@@ -5,6 +5,7 @@ import { BladDanych } from '../public/js/logic.js';
 import {
   normalizujWpis, tekstLiczby, kwotaPlnGr, historiaKwartalow, prognoza, przebiegKwartalu, wartosciArkusza,
   wierszeEwidencji, wierszeNaWpisy, odczytajDate, granicaKwartalu, kolejnyNumer, posortuj, kwotaProgu,
+  niejednoznacznaKwota, polaczWpisy,
 } from '../public/js/ewidencja-logika.js';
 import { eksportujCsv, importujCsv, parsujCsv } from '../public/js/csv.js';
 import { eksportujXlsx, importujXlsx, komorkiArkusza } from '../public/js/xlsx.js';
@@ -131,6 +132,94 @@ test('prognoza: ostatni dzień kwartału nie przewiduje przekroczenia po jego ko
   assert.equal(p.przekroczenie, null);
 });
 
+test('prognoza: sprzedaż z datą po dziś to plan, nie fakt (stan, progi i przekroczenie tylko do dziś)', () => {
+  const wpisy = [w('2026-10-01', '1000'), w('2026-12-20', '10000')];
+  const p = prognoza(wpisy, '2026-10-22');
+  assert.equal(p.sumaGr, 100000n, 'suma do dziś');
+  assert.equal(p.zapasGr, 1081350n - 100000n);
+  assert.equal(p.status.przekroczony, false);
+  assert.equal(p.zaplanowaneGr, 1000000n);
+  assert.equal(p.liczbaZaplanowanych, 1);
+  assert.equal(p.liczbaWpisow, 1);
+  assert.ok(p.progi.every((x) => x.osiagnietyDnia === null), 'żaden próg nie jest osiągnięty dziś');
+  // Plan wchodzi do prognozy: 20.12 suma do dziś i plan (11 000 zł) przekroczy limit.
+  assert.deepEqual(p.przekroczenie, { data: '2026-12-20', termin: '2026-12-27', prognoza: true });
+  // Na koniec kwartału: 1000 zł + większa z kwot: tempo (1000/22 × 70 dni ≈ 3181,81 zł) albo plan (10 000 zł), bez sumowania obu.
+  assert.equal(p.sumaNaKoniecGr, 100000n + 1000000n);
+  assert.equal(p.statusNaKoniec.przekroczony, true);
+  // Historia z datą dzisiejszą: bez przekroczenia jako faktu, plan osobno.
+  const [kw] = historiaKwartalow(wpisy, '2026-10-22');
+  assert.equal(kw.sumaGr, 100000n);
+  assert.equal(kw.przekroczenie, null);
+  assert.equal(kw.status.przekroczony, false);
+  assert.deepEqual([kw.zaplanowane, kw.zaplanowaneGr], [1, 1000000n]);
+  // Bez daty dzisiejszej historia liczy wszystkie wpisy, jak formuły arkusza.
+  assert.deepEqual(historiaKwartalow(wpisy)[0].przekroczenie, { data: '2026-12-20', termin: '2026-12-27' });
+  // Gdy plan przyjdzie, liczy się jak fakt.
+  assert.deepEqual(prognoza(wpisy, '2026-12-20').przekroczenie, { data: '2026-12-20', termin: '2026-12-27', prognoza: false });
+});
+
+test('prognoza: tempo większe od planu liczy się raz, plan nie dolicza się do tempa', () => {
+  // 4400 zł w 22 dni → 200 zł dziennie; plan 500 zł na 1.11 jest mniejszy od wyniku tempa, więc nie zmienia prognozy.
+  const bez = prognoza([w('2026-10-01', '1000'), w('2026-10-10', '1400'), w('2026-10-20', '2000')], '2026-10-22');
+  const z = prognoza([w('2026-10-01', '1000'), w('2026-10-10', '1400'), w('2026-10-20', '2000'), w('2026-11-01', '500')], '2026-10-22');
+  assert.equal(z.sumaGr, bez.sumaGr);
+  assert.equal(z.sumaNaKoniecGr, bez.sumaNaKoniecGr);
+  assert.deepEqual(z.przekroczenie, bez.przekroczenie);
+  assert.equal(z.zaplanowaneGr, 50000n);
+});
+
+test('kwartał w przyszłości: zaplanowana sprzedaż ponad limit to prognozowane przekroczenie', () => {
+  // Dziś 4.11.2026, sprzedaż 12.01.2027 na 12 000 zł (limit I kwartału 2027: 11 137,50 zł).
+  const wpisy = [w('2026-10-01', '500'), w('2027-01-12', '12000')];
+  const kw = historiaKwartalow(wpisy, '2026-11-04').find((k) => k.klucz === '2027-1');
+  assert.equal(kw.sumaGr, 0n);
+  assert.equal(kw.przekroczenie, null, 'to nie fakt');
+  assert.deepEqual(kw.prognozaPrzekroczenia, { data: '2027-01-12', termin: '2027-01-19', prognoza: true });
+  assert.equal(kw.statusZPlanem.przekroczony, true);
+  assert.equal(kw.wolneGr, 0n);
+  // Plan w limicie: bez prognozy przekroczenia, „zostało” po odjęciu planu.
+  const wLimicie = historiaKwartalow([w('2027-01-12', '1000')], '2026-11-04')[0];
+  assert.equal(wLimicie.prognozaPrzekroczenia, null);
+  assert.equal(wLimicie.wolneGr, 1113750n - 100000n);
+  assert.equal(historiaKwartalow(wpisy, '2026-11-04').find((k) => k.klucz === '2026-4').prognozaPrzekroczenia, null);
+});
+
+test('bieżący kwartał: przekroczenie z planu ma przyczynę „plan”, a budżet i zapas odejmują zaplanowane', () => {
+  // Do dziś 1734,50 zł, plan 10 000 zł na 15.12: sam plan przekracza limit, więc nic nie zostaje.
+  const p = prognoza([w('2026-10-01', '1734,50'), w('2026-12-15', '10000')], '2026-11-04');
+  assert.equal(p.zapasGr, 1081350n - 173450n);
+  assert.equal(p.wolneGr, 0n);
+  assert.equal(p.budzetDziennyGr, 0n);
+  assert.deepEqual(p.planPrzekroczenie, { data: '2026-12-15', termin: '2026-12-22', prognoza: true });
+  assert.deepEqual(p.przekroczenie, { data: '2026-12-15', termin: '2026-12-22', prognoza: true });
+  assert.equal(p.przyczynaPrzekroczenia, 'plan');
+  // Plan mieści się w limicie, a przekroczenie wynika z tempa: budżet liczony od limitu minus sprzedaż do dziś i plan.
+  const t = prognoza([w('2026-10-01', '1000'), w('2026-10-10', '1400'), w('2026-10-20', '2000'), w('2026-12-30', '1000')], '2026-10-22');
+  assert.equal(t.przyczynaPrzekroczenia, 'tempo');
+  assert.equal(t.planPrzekroczenie, null);
+  assert.equal(t.wolneGr, 641350n - 100000n);
+  assert.equal(t.budzetDziennyGr, (641350n - 100000n) / 71n);
+  // Bez planu bez zmian.
+  const bez = prognoza([w('2026-10-01', '1000')], '2026-10-22');
+  assert.equal(bez.przyczynaPrzekroczenia, null);
+  assert.equal(bez.wolneGr, bez.zapasGr);
+});
+
+test('włączenie pamięci łączy wpisy ze strony z zapisanymi w innej karcie, bez utraty i bez dubli', () => {
+  const zapisane = [w('2026-10-01', '10'), w('2026-10-02', '20')];
+  const lokalne = [zapisane[0], w('2026-10-03', '30'), w('2026-10-04', '40')];
+  assert.deepEqual(polaczWpisy(zapisane, lokalne).map((x) => x.kwota), ['10', '20', '30', '40']);
+  assert.deepEqual(polaczWpisy([], lokalne), lokalne, 'pusta pamięć: zostają wpisy ze strony');
+});
+
+test('stan kwartału: sprzedaż w walucie bez kursu jest policzona i oznaczona, a nie pominięta po cichu', () => {
+  const p = prognoza([w('2026-10-01', '1000'), w('2026-10-05', '500', 'EUR'), w('2026-10-06', '20', 'USD'), w('2026-10-07', '10', 'EUR', '4,25')], '2026-10-22');
+  assert.equal(p.bezKursu, 2);
+  assert.equal(p.sumaGr, 100000n + 4250n, 'suma bez sprzedaży bez kursu');
+  assert.equal(prognoza([w('2026-10-01', '1000')], '2026-10-22').bezKursu, 0);
+});
+
 // ---------------------------------------------------------------- arkusz, wydruk
 
 test('wartości kolumn F–I jak w formułach arkusza', () => {
@@ -174,6 +263,20 @@ test('import: daty w różnych formatach, nagłówek w dowolnym wierszu, błędy
   ]);
   assert.deepEqual(wpisy.map((x) => [x.data, x.kwota, x.opis, x.waluta]), [['2026-10-01', '100.00', 'kubek', 'PLN']]);
   assert.deepEqual(bledy, [{ wiersz: 5, powod: 'niepoprawna data' }, { wiersz: 6, powod: 'Wpisz kwotę samymi cyframi, np. 49,90.' }]);
+});
+
+test('import: kwota „1,234” albo „1.234” jest niejednoznaczna i odrzucona z błędem wiersza', () => {
+  for (const t of ['1,234', '1.234', '-1,234', '999.000', '1,234 zł']) assert.ok(niejednoznacznaKwota(t), t);
+  for (const t of ['1 234', '1234', '1,23', '1.2345', '1.234,50', '1,234.50', '0,500', '1234,567', '12,5']) assert.ok(!niejednoznacznaKwota(t), t);
+  assert.ok(!niejednoznacznaKwota(1.234), 'komórka liczbowa arkusza jest jednoznaczna');
+  const { wpisy, bledy } = wierszeNaWpisy([
+    ['Data', 'Kwota'], ['2026-10-01', '1,234'], ['2026-10-02', '1.234'], ['2026-10-03', '1.234,00'], ['2026-10-04', 1.234],
+  ]);
+  assert.deepEqual(wpisy.map((x) => x.kwota), ['1234.00', '1.234']);
+  assert.deepEqual(bledy, [
+    { wiersz: 2, powod: 'kwota 1,234 jest niejednoznaczna: wpisz 1234 (bez separatora tysięcy) albo 1,23' },
+    { wiersz: 3, powod: 'kwota 1.234 jest niejednoznaczna: wpisz 1234 (bez separatora tysięcy) albo 1,23' },
+  ]);
 });
 
 // ---------------------------------------------------------------- CSV

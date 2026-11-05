@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { wielkanoc, swieta, czyDzienRoboczy, dzienKursu } from '../public/js/kalendarz.js';
-import { planZapytania, wybierzKurs, pobierzKurs, adresZapytania, API_NBP } from '../public/js/nbp.js';
-import { BladDanych } from '../public/js/logic.js';
+import { planZapytania, wybierzKurs, pobierzKurs, adresZapytania, API_NBP, kursNaTekst } from '../public/js/nbp.js';
+import { BladDanych, formatujZl } from '../public/js/logic.js';
+import { normalizujWpis, kwotaPlnGr } from '../public/js/ewidencja-logika.js';
 
 // ---------------------------------------------------------------- święta
 
@@ -86,7 +87,31 @@ const odpowiedz = { table: 'A', code: 'EUR', rates: [
 
 test('wybór kursu: dzień oczekiwany', () => {
   const k = wybierzKurs(odpowiedz, planZapytania('EUR', '2026-10-26'), '2026-10-26');
-  assert.deepEqual(k, { stan: 'ok', kurs: '4.3700', data: '2026-10-23', tabela: '206/A/NBP/2026', oczekiwany: '2026-10-23', innyDzien: false });
+  assert.deepEqual(k, { stan: 'ok', kurs: '4.37', data: '2026-10-23', tabela: '206/A/NBP/2026', oczekiwany: '2026-10-23', innyDzien: false });
+});
+
+test('kurs NBP zapisany tak, jak podał go NBP, bez zaokrąglania do 4 miejsc', () => {
+  // Kursy średnie z tabeli A z 4.11.2026 (na 1 jednostkę waluty).
+  const kursy = { EUR: 4.4014, HUF: 0.012115, JPY: 0.024681, KRW: 0.002918, IDR: 0.00021529, CLP: 0.003983 };
+  assert.deepEqual(Object.fromEntries(Object.entries(kursy).map(([k, v]) => [k, kursNaTekst(v)])), {
+    EUR: '4.4014', HUF: '0.012115', JPY: '0.024681', KRW: '0.002918', IDR: '0.00021529', CLP: '0.003983',
+  });
+  assert.equal(kursNaTekst(2.1529e-7), '0.00000021529', 'bez zapisu wykładniczego');
+});
+
+test('kurs NBP z 6 i 8 miejscami po przecinku (HUF, IDR): kwota w PLN liczona od pełnego kursu', () => {
+  const plan = (waluta) => planZapytania(waluta, '2026-11-05');
+  const huf = wybierzKurs({ rates: [{ no: '214/A/NBP/2026', effectiveDate: '2026-11-04', mid: 0.012115 }] }, plan('HUF'), '2026-11-05');
+  assert.equal(huf.kurs, '0.012115');
+  const sprzedazHuf = normalizujWpis({ data: '2026-11-05', kwota: '100000', waluta: 'HUF', kurs: huf.kurs });
+  assert.equal(kwotaPlnGr(sprzedazHuf), 121150n);
+  assert.match(formatujZl(kwotaPlnGr(sprzedazHuf)), /^1\s211,50\szł$/); // 100 000 × 0,012115
+  const idr = wybierzKurs({ rates: [{ no: '214/A/NBP/2026', effectiveDate: '2026-11-04', mid: 0.00021529 }] }, plan('IDR'), '2026-11-05');
+  assert.equal(idr.kurs, '0.00021529');
+  const sprzedazIdr = normalizujWpis({ data: '2026-11-05', kwota: '10000000', waluta: 'IDR', kurs: idr.kurs });
+  assert.equal(kwotaPlnGr(sprzedazIdr), 215290n); // 10 000 000 × 0,00021529 = 2152,90 zł (po 4 miejscach byłoby 2000 zł)
+  // Kurs wpisany w formularzu po polsku też zostaje pełny.
+  assert.equal(normalizujWpis({ data: '2026-11-05', kwota: '100000', waluta: 'HUF', kurs: '0,012115' }).kurs, '0.012115');
 });
 
 test('wybór kursu: brak tabeli w oczekiwanym dniu w przeszłości → ostatnia wcześniejsza', () => {

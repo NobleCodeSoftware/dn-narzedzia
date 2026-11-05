@@ -448,6 +448,120 @@ test('błąd znika przy zmianie pola, fokus po oknie limitu na cenie, utratę pr
   assert.match(html, /<button type="button" id="cofnij-utrate" class="drugorzedny maly" hidden>To była pomyłka: cofnij<\/button>/);
 });
 
+// Wyłączenie pamięci usuwa także faktury, klientów i zapamiętaną utratę prawa do faktur poza KSeF,
+// więc na obu stronach jest okno potwierdzenia, a po anulowaniu przełącznik wraca do zaznaczonego.
+test('ewidencja i faktura: wyłączenie pamięci pyta o potwierdzenie przed usunięciem danych', () => {
+  for (const plik of ['js/ewidencja-widok.js', 'js/faktura-widok.js']) {
+    const kod = czytaj(join(PUBLIC, plik));
+    const fn = kod.slice(kod.indexOf('async function zmienPamiec()'), kod.indexOf('\n}\n', kod.indexOf('async function zmienPamiec()')));
+    assert.ok(fn.length > 0, `${plik}: zmienPamiec jest asynchroniczna`);
+    assert.ok(fn.indexOf('await zapytaj(') >= 0 && fn.indexOf('await zapytaj(') < fn.indexOf('magazyn.wyczysc()'), `${plik}: pytanie przed magazyn.wyczysc()`);
+    assert.match(fn, /tytul: 'Wyłączyć pamięć przeglądarki\?'/);
+    assert.match(fn, /faktury i dane klientów|faktury, dane klientów/);
+    assert.match(fn, /if \(!odp\) \{ \$\('pamietaj'\)\.checked = true; return; \}/);
+  }
+  const html = czytaj(join(PUBLIC, 'index.html'));
+  assert.match(html, /<input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">/);
+  assert.match(html, /<p id="pamietaj-info" class="podpowiedz">Wyłączenie usuwa z tej przeglądarki także faktury i dane klientów\./);
+});
+
+test('ewidencja: okno „Wyczyść dane” wymienia wszystko, co usuwa', () => {
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  const fn = kod.slice(kod.indexOf('async function wyczysc()'), kod.indexOf('magazyn.wyczysc()', kod.indexOf('async function wyczysc()')));
+  assert.match(fn, /tytul: 'Wyczyścić dane\?'/);
+  for (const co of ['wpisy ewidencji', 'wystawione faktury', 'dane klientów', 'zapamiętane przekroczenie limitu KSeF']) assert.ok(fn.includes(co), co);
+});
+
+test('ewidencja: niedostępna pamięć wyłącza przełącznik, nieudany zapis pokazuje komunikat i ostrzega przed zamknięciem', () => {
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  assert.match(kod, /stan\.dostepna = magazyn\.dostepny\(\);\n\s+\$\('pamietaj'\)\.disabled = !stan\.dostepna;/);
+  assert.match(kod, /if \(!stan\.dostepna\) \$\('pamietaj-info'\)\.textContent = 'Pamięć przeglądarki jest niedostępna/);
+  assert.match(kod, /stan\.pamietaj = stan\.dostepna && u\.pamietaj !== false;/);
+  const utrwal = kod.slice(kod.indexOf('function utrwal()'), kod.indexOf('\n}\n', kod.indexOf('function utrwal()')));
+  assert.match(utrwal, /stan\.zapisNieudany = !magazyn\.zapisz\(stan\.wpisy\);/);
+  assert.match(utrwal, /pokazStanPliku\(TEKST_NIEUDANEGO_ZAPISU\);/);
+  assert.match(utrwal, /\$\('pliki-stan'\)\.textContent === TEKST_NIEUDANEGO_ZAPISU\) \{\n\s+pokazStanPliku\(''\);/, 'komunikat znika po udanym zapisie');
+  assert.match(kod, /addEventListener\('beforeunload', \(ev\) => \{\n\s+if \(\(!stan\.pamietaj \|\| stan\.zapisNieudany\) &&/);
+});
+
+test('ewidencja i faktura: zmiana danych w innej karcie przeładowuje stan i widok', () => {
+  for (const plik of ['js/ewidencja-widok.js', 'js/faktura-widok.js']) {
+    const kod = czytaj(join(PUBLIC, plik));
+    assert.match(kod, /window\.addEventListener\('storage', poZmianieWInnejKarcie\);/, plik);
+    const fn = kod.slice(kod.indexOf('function poZmianieWInnejKarcie(ev)'), kod.indexOf('\n}\n', kod.indexOf('function poZmianieWInnejKarcie(ev)')));
+    assert.match(fn, /ev\.key !== null && \(!ev\.key\.startsWith\('dn-'\) \|\| ev\.key === 'dn-test'\)/, plik);
+    assert.match(fn, /wczytajZMagazynu\(\);/, plik);
+    assert.match(fn, /odswiez\(\);/, plik);
+    // Dane tylko na tej stronie (pamięć wyłączona) nigdy nie są zastępowane danymi z innej karty.
+    const straz = fn.search(/if \(!stan\.pamietaj[^)]*\) return;/);
+    assert.ok(straz > 0 && straz < fn.indexOf('wczytajZMagazynu();'), `${plik}: przy wyłączonej pamięci zmiana z innej karty jest pomijana`);
+    assert.ok(fn.indexOf("if ($('dialog').open)") < straz, `${plik}: przy otwartym oknie zmiana czeka na jego zamknięcie`);
+    // Włączenie pamięci łączy dane ze strony z zapisanymi, zanim je zapisze.
+    const zm = kod.slice(kod.indexOf('async function zmienPamiec()'), kod.indexOf('utrwal();', kod.indexOf('async function zmienPamiec()')));
+    assert.match(zm, /stan\.(wpisy|faktury) = polacz(Wpisy|Faktury)\(stan\.(wpisy|faktury), lokalne(\.faktury)?\);/, plik);
+  }
+  const ew = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  assert.match(ew, /if \(!stan\.pamietaj \|\| stan\.zapisNieudany \|\| stan\.przyklad\) return;/);
+  // Faktura: przed numerem i regułą KSeF lista faktur jest wczytywana ponownie z pamięci przeglądarki.
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
+  const wystaw = kod.slice(kod.indexOf('async function wystaw(ev)'), kod.indexOf('\n}\n', kod.indexOf('async function wystaw(ev)')));
+  const wczytanie = wystaw.indexOf('wczytajZMagazynu();');
+  assert.ok(wczytanie > 0, 'wczytanie w wystaw()');
+  for (const dalej of ['normalizujFakture(', 'numerZajety(stan.faktury, f.numer)', 'regula(f,', 'stan.faktury = [...stan.faktury, f];']) {
+    assert.ok(wczytanie < wystaw.indexOf(dalej), `wczytanie przed ${dalej}`);
+  }
+});
+
+test('ewidencja: stan kwartału mówi o sprzedaży bez kursu i o sprzedaży zaplanowanej', () => {
+  const html = czytaj(join(PUBLIC, 'index.html'));
+  assert.match(html, /<p id="stan-bez-kursu" class="podpowiedz ostrzezenie-tekst" hidden><\/p>/);
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  assert.match(kod, /\$\('stan-bez-kursu'\)\.hidden = p\.bezKursu === 0;/);
+  assert.match(kod, /suma kwartału może być zaniżona/);
+  assert.match(kod, /w tym zaplanowane: \$\{formatujZl\(p\.zaplanowaneGr\)\}/);
+  assert.match(kod, /historiaKwartalow\(stan\.wpisy, dzis\(\)\)/);
+  assert.ok(!/historiaKwartalow\(stan\.wpisy\)/.test(kod), 'historia w widoku zawsze z dzisiejszą datą');
+});
+
+test('ewidencja: przekroczenie z zaplanowanych sprzedaży opisane jako plan, nie jako tempo, także w przyszłych kwartałach', () => {
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  assert.match(kod, /według zaplanowanych sprzedaży przekroczysz limit \$\{dataPl\(przekroczenie\.data\)\}/);
+  assert.match(kod, /przekroczysz limit według zaplanowanych sprzedaży, dnia \$\{dataPl\(k\.prognozaPrzekroczenia\.data\)\}/);
+  assert.match(kod, /Według zaplanowanych sprzedaży przekroczysz limit \$\{dataPl\(kw\.prognozaPrzekroczenia\.data\)\}/);
+  assert.match(kod, /Według zaplanowanych sprzedaży limit zostanie przekroczony \$\{dataPl\(planowane\.prognozaPrzekroczenia\.data\)\}/);
+  assert.match(kod, /zostało \$\{formatujZl\(kw\.wolneGr\)\}/, 'potwierdzenie: zostało po odjęciu planu');
+  assert.match(kod, /\$\('stan-budzet'\)\.textContent = p\.wolneGr > 0n/);
+  assert.match(kod, /Do limitu zostało \$\{formatujZl\(p\.wolneGr\)\}/);
+  assert.ok(!/kw\.status\.pozostaloGr/.test(kod));
+  assert.match(kod, /if \(!p\) \{\n\s+\$\('stan-bez-kursu'\)\.hidden = true;/, 'bez limitu na rok: bez komunikatu o kursach');
+});
+
+test('ewidencja: niejednoznaczna kwota w formularzu („1,234”) daje komunikat zamiast zgadywania', () => {
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  const fn = kod.slice(kod.indexOf('function zapiszFormularz(ev)'), kod.indexOf('normalizujWpis(', kod.indexOf('function zapiszFormularz(ev)')));
+  assert.match(fn, /if \(niejednoznacznaKwota\(v\.kwota\)\) \{/);
+  assert.match(fn, /pokazBladFormularza\(.*'f-kwota'\);/);
+});
+
+test('strona główna: limit 10 000 zł dla faktur poza KSeF nie odnawia się po przekroczeniu', () => {
+  const html = czytaj(join(PUBLIC, 'index.html')).replace(/&nbsp;/g, ' ');
+  const ksef = html.slice(html.indexOf('id="ksef"'), html.indexOf('</section>', html.indexOf('id="ksef"')));
+  assert.match(ksef, /dopóki faktury dla firm wystawione w miesiącu mają razem najwyżej 10 000 zł brutto\./);
+  assert.match(ksef, /każdą kolejną fakturę dla firmy do końca 2026 r\. wystawia się w KSeF/);
+  assert.ok(!/nie przekracza 10 000 zł brutto w miesiącu/.test(ksef));
+});
+
+test('arkusz: kolumna kursu NBP pokazuje pełny kurs (więcej niż 4 miejsca po przecinku)', () => {
+  const skrypt = czytaj(fileURLToPath(new URL('../scripts/arkusz.py', import.meta.url)));
+  assert.match(skrypt, /ws\[f"E\{r\}"\]\.number_format = "0\.0000####"/);
+});
+
+test('SECURITY.md: aktywnie wykorzystywana podatność poprawiana priorytetowo, bez obietnic terminów zgłoszeń', () => {
+  const sec = czytaj(fileURLToPath(new URL('../SECURITY.md', import.meta.url)));
+  assert.match(sec, /Aktywnie wykorzystywaną podatność poprawiamy priorytetowo, bez zbędnej zwłoki\./);
+  assert.ok(!/CRA|24 h/.test(sec));
+});
+
 // ---------------------------------------------------------------- metadane wyszukiwarek i pliki do włączenia indeksowania
 
 const BAZA = 'https://dn.noblecode.pl';

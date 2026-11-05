@@ -7,6 +7,7 @@ import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, sumaGr, sumaFirmWMiesiacu,
   BladPola, LIMIT_POZA_KSEF_GR, sprawdzIdSprzedawcy, poprawnyPesel, miesiacDopelniacz, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU, lukaWNumeracji, polaczUtrate, dataReguly, skrotKsef,
+  polaczFaktury, proponowanyNumer as numerPoPolaczeniu,
 } from '../public/js/faktura-logika.js';
 
 const NIP_OK = '1234563218'; // suma kontrolna: 118 mod 11 = 8
@@ -481,4 +482,16 @@ test('okna mają akapity po najwyżej 2 zdania, twarde spacje przed „r.” i �
   ]);
   assert.match(sp(TEKSTY_OKIEN.limit('2026-10')[0]), /Zapamiętamy to od października 2026 r\.$/);
   assert.equal(KOMUNIKAT_PO_OKNIE_LIMITU, 'Sprawdź kwotę albo wystaw tę fakturę w KSeF.');
+});
+
+test('włączenie pamięci łączy faktury z tej wizyty z zapisanymi w innej karcie, bez utraty i bez dubli', () => {
+  const zapisana = { numer: '1/2026', suma: '100.00', dataWystawienia: '2026-11-02' };
+  const lokalnaTaSama = { ...zapisana };
+  const lokalnaNowa = { numer: '2/2026', suma: '50.00', dataWystawienia: '2026-11-04' };
+  const polaczone = polaczFaktury([zapisana], [lokalnaTaSama, lokalnaNowa]);
+  assert.deepEqual(polaczone.map((f) => f.numer), ['1/2026', '2/2026']);
+  assert.equal(numerPoPolaczeniu(polaczone, '2026-11-04'), '3/2026', 'numeracja zna obie faktury');
+  // Inna faktura z tym samym numerem też zostaje: była już wystawiona.
+  assert.equal(polaczFaktury([zapisana], [{ ...zapisana, suma: '70.00' }]).length, 2);
+  assert.deepEqual(polaczFaktury([], [lokalnaNowa]), [lokalnaNowa]);
 });

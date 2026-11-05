@@ -102,6 +102,7 @@
         </div>
         <p class="skala" aria-hidden="true"><span>0%</span><span>70</span><span>85</span><span>100%</span></p>
         <p id="stan-status" class="status"></p>
+        <p id="stan-bez-kursu" class="podpowiedz ostrzezenie-tekst" hidden></p>
         <dl class="liczby">
           <div><dt>Sprzedaż w kwartale</dt><dd id="stan-suma"></dd></div>
           <div><dt>Zostało do limitu</dt><dd id="stan-zapas"></dd></div>
@@ -236,10 +237,10 @@
 
       <h3>Pamięć przeglądarki</h3>
       <div class="przelacznik">
-        <input type="checkbox" id="pamietaj" checked>
+        <input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">
         <label for="pamietaj">Pamiętaj wpisy w tej przeglądarce</label>
       </div>
-      <p class="podpowiedz">Bez tej opcji wpisy znikną po zamknięciu strony, chyba że zapiszesz plik.</p>
+      <p id="pamietaj-info" class="podpowiedz">Wyłączenie usuwa z tej przeglądarki także faktury i dane klientów. Bez tej opcji wpisy znikną po zamknięciu strony, chyba że zapiszesz plik.</p>
       <div class="przyciski">
         <button type="button" class="niebezpieczny" id="wyczysc">Wyczyść dane</button>
       </div>
@@ -320,7 +321,7 @@
       <p>KSeF (Krajowy System e-Faktur) to państwowy system do wystawiania i odbierania faktur.</p>
       <dl class="daty">
         <dt>Do 31 grudnia 2026</dt>
-        <dd>Faktury dla firm można wystawiać poza KSeF, jeśli sprzedaż na takich fakturach nie przekracza 10&nbsp;000&nbsp;zł brutto w miesiącu.</dd>
+        <dd>Faktury dla firm można wystawiać poza KSeF, dopóki faktury dla firm wystawione w miesiącu mają razem najwyżej 10&nbsp;000&nbsp;zł brutto. Po przekroczeniu tej kwoty każdą kolejną fakturę dla firmy do końca 2026&nbsp;r. wystawia się w KSeF.</dd>
         <dt>Od 1 stycznia 2027</dt>
         <dd>Ten wyjątek się kończy i faktury dla firm wystawia się w KSeF. Faktury dla osób prywatnych w KSeF są dobrowolne.</dd>
       </dl>

@@ -7,7 +7,7 @@ import { normalizujWpis } from './ewidencja-logika.js';
 import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, nipZKreskami, dataPl, MAX_POZYCJI,
-  MAX_KWOTA_GR, BladPola, lukaWNumeracji, polaczUtrate, skrotKsef, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU,
+  MAX_KWOTA_GR, BladPola, lukaWNumeracji, polaczUtrate, skrotKsef, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU, polaczFaktury,
 } from './faktura-logika.js';
 import * as magazyn from './magazyn.js';
 
@@ -85,6 +85,11 @@ function utrwal() {
 
 function wczytajStart() {
   stan.dostepna = magazyn.dostepny();
+  wczytajZMagazynu();
+}
+
+/** Faktury, sprzedawca, klienci i utrata prawa z pamięci przeglądarki (przy starcie, przed wystawieniem i po zmianie w innej karcie). */
+function wczytajZMagazynu() {
   stan.pamietaj = stan.dostepna && magazyn.pamiecWlaczona();
   $('pamietaj').checked = stan.pamietaj;
   $('pamietaj').disabled = !stan.dostepna;
@@ -98,6 +103,22 @@ function wczytajStart() {
   stan.sprzedawca = d.sprzedawca;
   stan.utrataOd = d.utrataOd;
   stan.nabywcy = d.nabywcy.filter((n) => n && typeof n.nazwa === 'string');
+}
+
+/** Inna karta zmieniła dane strony: wczytujemy je ponownie, żeby numeracja i reguła KSeF znały wszystkie faktury. */
+function poZmianieWInnejKarcie(ev) {
+  if (ev.key !== null && (!ev.key.startsWith('dn-') || ev.key === 'dn-test')) return;
+  // Okno potwierdzenia jest otwarte (np. wyłączenie pamięci): zmianę uwzględniamy dopiero po jego zamknięciu.
+  if ($('dialog').open) { $('dialog').addEventListener('close', () => poZmianieWInnejKarcie(ev), { once: true }); return; }
+  // Przy wyłączonej pamięci faktury z tej wizyty są tylko na stronie: zmiany z innych kart ich nie zastępują.
+  // Po włączeniu pamięci tutaj łączymy je z zapisanymi (zmienPamiec).
+  if (!stan.pamietaj) return;
+  const byloPrzekroczenie = Boolean(stan.utrataOd);
+  wczytajZMagazynu();
+  if (byloPrzekroczenie && !stan.utrataOd) $('f-przekroczony').checked = false;
+  odswiezEwidencje();
+  renderujListe();
+  odswiez();
 }
 
 // ------------------------------------------------------------ pozycje
@@ -295,6 +316,12 @@ async function wystaw(ev) {
   ev.preventDefault();
   odswiezDateWystawienia(); // po północy pokazuje nowy dzień, zgodny z datą w logice
   $('potwierdzenie').hidden = true;
+  // Faktury mogły przybyć w innej karcie: numer i regułę KSeF liczymy od aktualnej listy z pamięci przeglądarki.
+  if (stan.pamietaj) {
+    wczytajZMagazynu();
+    renderujListe();
+    odswiez();
+  }
   let f;
   try {
     f = normalizujFakture(wartosciFormularza(), { dzis: dzis() });
@@ -470,7 +497,15 @@ async function zmienPamiec() {
   if ($('pamietaj').checked) {
     stan.pamietaj = true;
     magazyn.zapiszUstawienia({ ...magazyn.wczytajUstawienia(), pamietaj: true });
+    // Pamięć mogła być włączona w innej karcie: łączymy faktury z tej wizyty z zapisanymi, zamiast je nadpisać.
+    const lokalne = { faktury: stan.faktury, sprzedawca: stan.sprzedawca, nabywcy: stan.nabywcy, utrataOd: stan.utrataOd };
+    wczytajZMagazynu();
+    stan.faktury = polaczFaktury(stan.faktury, lokalne.faktury);
+    stan.sprzedawca = lokalne.sprzedawca ?? stan.sprzedawca;
+    stan.nabywcy = [...lokalne.nabywcy].reverse().reduce((lista, n) => dopiszNabywce(lista, n), stan.nabywcy);
+    stan.utrataOd = polaczUtrate(stan.utrataOd, lokalne.utrataOd);
     utrwal();
+    renderujListe();
     oglos('Faktury i dane klientów będą pamiętane w tej przeglądarce.');
   } else {
     const odp = await zapytaj({
@@ -581,6 +616,8 @@ function start() {
   $('f-przekroczony').addEventListener('change', zaznaczUtrate);
   $('cofnij-utrate').addEventListener('click', cofnijUtrate);
   window.addEventListener('beforeprint', () => zbudujWydruk(stan.doDruku));
+  // Ta sama strona otwarta w dwóch kartach: zmiana w jednej odświeża drugą.
+  window.addEventListener('storage', poZmianieWInnejKarcie);
 
   odswiezRodzaj();
   odswiezEwidencje();

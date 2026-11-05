@@ -128,7 +128,7 @@ def zakladka_sprzedaz(wb: Workbook) -> None:
     for r in range(PIERWSZY, OSTATNI + 1):
         ws[f"A{r}"].number_format = FORMAT_DATY
         ws[f"C{r}"].number_format = FORMAT_KWOTY
-        ws[f"E{r}"].number_format = "0.0000"
+        ws[f"E{r}"].number_format = "0.0000####"  # pełny kurs NBP (np. HUF 0,012115, IDR 0,00021529)
         ws[f"F{r}"] = (f'=IF(C{r}="","",IF(OR(D{r}="",D{r}="PLN"),ROUND(C{r},2),'
                        f'IF(E{r}="","brak kursu",ROUND(C{r}*E{r},2))))')
         ws[f"G{r}"] = (f'=IF(OR(A{r}="",NOT(ISNUMBER(F{r}))),"",IF(NOT(ISNUMBER(A{r})),"sprawdź datę",'

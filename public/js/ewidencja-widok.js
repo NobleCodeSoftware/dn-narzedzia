@@ -6,7 +6,7 @@ import { BladDanych, dataWarszawa, formatujZl, kwartal, statusLimitu } from './l
 import { procentTekst, opisProgu, klasaProgu } from './wspolne.js';
 import {
   normalizujWpis, kwotaPlnGr, posortuj, historiaKwartalow, prognoza, wierszeEwidencji, etykietaKwartalu,
-  kluczKwartalu, granicaKwartalu, limitLubNull,
+  kluczKwartalu, granicaKwartalu, limitLubNull, niejednoznacznaKwota, opisNiejednoznacznejKwoty, polaczWpisy,
 } from './ewidencja-logika.js';
 import { pobierzKurs, pobierzKursyHurtem, WALUTY } from './nbp.js';
 import { eksportujCsv, importujCsv } from './csv.js';
@@ -25,6 +25,8 @@ const stan = {
   edytowany: null, // id wpisu w edycji
   filtr: null, // klucz kwartału, 'wszystkie' albo null (bieżący)
   pamietaj: true,
+  dostepna: true, // czy pamięć przeglądarki w ogóle działa
+  zapisNieudany: false, // ostatni zapis w pamięci przeglądarki się nie udał (np. brak miejsca)
   zmianyOdZapisuPliku: false,
   kursRecznie: false, // użytkownik sam wpisał kurs: nie nadpisujemy go
   kursInfo: null,
@@ -88,9 +90,17 @@ function pokazStanPliku(tekst) {
 
 // ------------------------------------------------------------ zapis i odczyt
 
+const TEKST_NIEUDANEGO_ZAPISU = 'Nie udało się zapisać wpisów w pamięci przeglądarki. Zapisz plik XLSX albo CSV, żeby ich nie stracić.';
+
 function utrwal() {
-  if (stan.przyklad) return;
-  if (stan.pamietaj) magazyn.zapisz(stan.wpisy);
+  if (stan.przyklad || !stan.pamietaj) return;
+  stan.zapisNieudany = !magazyn.zapisz(stan.wpisy);
+  if (stan.zapisNieudany) {
+    pokazStanPliku(TEKST_NIEUDANEGO_ZAPISU);
+    oglos(TEKST_NIEUDANEGO_ZAPISU);
+  } else if ($('pliki-stan').textContent === TEKST_NIEUDANEGO_ZAPISU) {
+    pokazStanPliku(''); // zapis znów działa: stary komunikat nie jest już prawdziwy
+  }
 }
 
 function ustawWpisy(wpisy, { zmiana = true } = {}) {
@@ -101,18 +111,44 @@ function ustawWpisy(wpisy, { zmiana = true } = {}) {
 }
 
 function wczytajStart() {
+  stan.dostepna = magazyn.dostepny();
+  $('pamietaj').disabled = !stan.dostepna;
+  if (!stan.dostepna) $('pamietaj-info').textContent = 'Pamięć przeglądarki jest niedostępna (np. tryb prywatny), więc wpisy znikną po zamknięciu strony. Zapisz plik przed zamknięciem.';
+  wczytajZMagazynu();
+}
+
+/** Ustawienia i wpisy z pamięci przeglądarki (przy starcie i po zmianie w innej karcie). */
+function wczytajZMagazynu() {
   const u = magazyn.wczytajUstawienia();
-  stan.pamietaj = u.pamietaj !== false;
+  stan.pamietaj = stan.dostepna && u.pamietaj !== false;
   $('pamietaj').checked = stan.pamietaj;
   if (u.osoba) $('druk-osoba').value = String(u.osoba).slice(0, 80);
   if (!stan.pamietaj) return;
   const zapisane = magazyn.wczytaj();
-  if (!zapisane) return;
   const wpisy = [];
-  for (const w of zapisane.wpisy) {
+  for (const w of zapisane?.wpisy ?? []) {
     try { wpisy.push(normalizujWpis(w)); } catch { /* pomijamy uszkodzony wpis */ }
   }
   stan.wpisy = wpisy;
+}
+
+/** Inna karta zmieniła dane strony: wczytujemy je ponownie, żeby nie nadpisać ich starszą wersją. */
+function poZmianieWInnejKarcie(ev) {
+  if (ev.key !== null && (!ev.key.startsWith('dn-') || ev.key === 'dn-test')) return;
+  // Okno potwierdzenia jest otwarte (np. wyłączenie pamięci): zmianę uwzględniamy dopiero po jego zamknięciu.
+  if ($('dialog').open) { $('dialog').addEventListener('close', () => poZmianieWInnejKarcie(ev), { once: true }); return; }
+  // Wpisy, które są tylko na tej stronie (pamięć wyłączona, nieudany zapis, przykład), nigdy nie są zastępowane
+  // danymi z innej karty. Przy włączaniu pamięci tutaj łączymy je z zapisanymi (zmienPamiec).
+  if (!stan.pamietaj || stan.zapisNieudany || stan.przyklad) return;
+  wczytajZMagazynu();
+  odswiez();
+}
+
+/** Opis prognozowanego przekroczenia według przyczyny: zaplanowana sprzedaż albo obecne tempo. */
+function opisGrozby(przekroczenie, przyczyna) {
+  return przyczyna === 'plan'
+    ? `według zaplanowanych sprzedaży przekroczysz limit ${dataPl(przekroczenie.data)}`
+    : `przy obecnym tempie przekroczysz limit około ${dataPl(przekroczenie.data)}`;
 }
 
 // ------------------------------------------------------------ dialog
@@ -150,10 +186,13 @@ function renderujStan() {
   $('stan-dane').hidden = puste;
   if (puste) return;
   if (!p) {
+    $('stan-bez-kursu').hidden = true;
     $('stan-status').textContent = 'Brak kwoty limitu na ten rok. Uzupełnimy ją po ogłoszeniu płacy minimalnej.';
     return;
   }
   const s = p.status;
+  $('stan-bez-kursu').hidden = p.bezKursu === 0;
+  $('stan-bez-kursu').textContent = `Bez kursu NBP: ${odmiana(p.bezKursu, SPRZEDAZ)} w walucie, więc suma kwartału może być zaniżona. Uzupełnij kursy na liście wpisów.`;
   $('stan-procent').textContent = procentTekst(s.procent);
   $('stan-pasek').style.width = `${Math.min(Math.max(s.procent, 0), 100)}%`;
   $('stan-pasek').className = `pasek-wypelnienie ${klasaProgu(s)}`;
@@ -161,27 +200,34 @@ function renderujStan() {
   const grozi = Boolean(p.przekroczenie?.prognoza);
   const klasaStatusu = grozi ? klasaProgu(p.statusNaKoniec) : klasaProgu(s);
   $('stan-status').textContent = grozi
-    ? `Uwaga: przy obecnym tempie przekroczysz limit około ${dataPl(p.przekroczenie.data)}.`
+    ? `Uwaga: ${opisGrozby(p.przekroczenie, p.przyczynaPrzekroczenia)}.`
     : opisProgu(s);
   $('stan-status').className = `status ${klasaStatusu}`;
   $('stan-suma').textContent = formatujZl(p.sumaGr);
-  $('stan-zapas').textContent = p.zapasGr >= 0n ? formatujZl(p.zapasGr) : `limit przekroczony o ${formatujZl(-p.zapasGr)}`;
-  $('stan-koniec').textContent = p.tempoDzienneGr > 0n
-    ? `${formatujZl(p.sumaNaKoniecGr)} (${procentTekst(p.statusNaKoniec.procent)})`
+  if (p.zapasGr < 0n) $('stan-zapas').textContent = `limit przekroczony o ${formatujZl(-p.zapasGr)}`;
+  else if (p.planPrzekroczenie) $('stan-zapas').textContent = `${formatujZl(p.zapasGr)}, ale zaplanowane sprzedaże go przekraczają`;
+  else if (p.zaplanowaneGr !== 0n) $('stan-zapas').textContent = `${formatujZl(p.wolneGr)} po zaplanowanych sprzedażach`;
+  else $('stan-zapas').textContent = formatujZl(p.zapasGr);
+  const zaplanowane = p.zaplanowaneGr !== 0n ? `, w tym zaplanowane: ${formatujZl(p.zaplanowaneGr)}` : '';
+  $('stan-koniec').textContent = p.tempoDzienneGr > 0n || p.zaplanowaneGr !== 0n
+    ? `${formatujZl(p.sumaNaKoniecGr)} (${procentTekst(p.statusNaKoniec.procent)})${zaplanowane}`
     : 'brak sprzedaży do oceny';
-  $('stan-budzet').textContent = p.zapasGr > 0n ? formatujZl(p.budzetDziennyGr) : '—';
+  $('stan-budzet').textContent = p.wolneGr > 0n ? formatujZl(p.budzetDziennyGr) : '—';
 
   let zdanie;
   if (p.przekroczenie && !p.przekroczenie.prognoza) {
     zdanie = `Limit przekroczony ${dataPl(p.przekroczenie.data)}. Zobacz niżej, co dalej.`;
+  } else if (p.planPrzekroczenie) {
+    zdanie = `Zaplanowane sprzedaże (${formatujZl(p.zaplanowaneGr)}) razem ze sprzedażą do dziś przekraczają limit ${dataPl(p.planPrzekroczenie.data)}. Żeby się zmieścić, zmniejsz albo przesuń zaplanowaną sprzedaż.`;
   } else if (p.przekroczenie) {
-    zdanie = `Sprzedajesz średnio ${formatujZl(p.tempoDzienneGr)} dziennie, a żeby zmieścić się w limicie, do końca kwartału możesz średnio ${formatujZl(p.budzetDziennyGr)} dziennie.`;
+    const zPlanem = p.zaplanowaneGr !== 0n ? ' razem z zaplanowanymi sprzedażami' : '';
+    zdanie = `Sprzedajesz średnio ${formatujZl(p.tempoDzienneGr)} dziennie, a żeby zmieścić się w limicie${zPlanem}, do końca kwartału możesz średnio ${formatujZl(p.budzetDziennyGr)} dziennie.`;
   } else if (p.tempoDzienneGr > 0n) {
     zdanie = `Przy obecnym tempie (${formatujZl(p.tempoDzienneGr)} dziennie) zmieścisz się w limicie do końca kwartału.`;
   } else {
     zdanie = 'W tym kwartale nie ma jeszcze sprzedaży, więc nie ma z czego liczyć prognozy.';
   }
-  if (p.pewnosc === 'mala' && p.tempoDzienneGr > 0n && !(p.przekroczenie && !p.przekroczenie.prognoza)) {
+  if (p.pewnosc === 'mala' && p.tempoDzienneGr > 0n && !(p.przekroczenie && !p.przekroczenie.prognoza) && !p.planPrzekroczenie) {
     zdanie += ' Prognoza jest mało pewna: minęło mało dni albo jest mało wpisów.';
   }
   $('stan-prognoza').textContent = zdanie;
@@ -259,7 +305,7 @@ function renderujListe() {
 // ------------------------------------------------------------ historia
 
 function renderujHistorie() {
-  const h = historiaKwartalow(stan.wpisy);
+  const h = historiaKwartalow(stan.wpisy, dzis());
   const p = prognoza(stan.wpisy, dzis());
   const grozi = p?.przekroczenie?.prognoza ? p : null; // bieżący kwartał z prognozą przekroczenia
   $('historia-pusto').hidden = h.length > 0;
@@ -271,10 +317,14 @@ function renderujHistorie() {
     let opis;
     if (!k.status) opis = k.rok < 2026 ? 'limit kwartalny od 2026' : 'brak kwoty limitu na ten rok';
     else if (k.przekroczenie) opis = `przekroczony ${dataPl(k.przekroczenie.data)}`;
-    else if (grozi && grozi.rok === k.rok && grozi.q === k.q) opis = `Uwaga: przy obecnym tempie przekroczysz limit około ${dataPl(grozi.przekroczenie.data)}`;
+    else if (grozi && grozi.rok === k.rok && grozi.q === k.q) opis = `Uwaga: ${opisGrozby(grozi.przekroczenie, grozi.przyczynaPrzekroczenia)}`;
+    else if (k.prognozaPrzekroczenia) opis = `Uwaga: przekroczysz limit według zaplanowanych sprzedaży, dnia ${dataPl(k.prognozaPrzekroczenia.data)}`;
     else opis = opisProgu(k.status).replace(/\.$/, '');
-    const klasaStanu = grozi && grozi.rok === k.rok && grozi.q === k.q && !k.przekroczenie ? klasaProgu(grozi.statusNaKoniec) : (k.status ? klasaProgu(k.status) : null);
+    let klasaStanu = k.status ? klasaProgu(k.status) : null;
+    if (!k.przekroczenie && grozi && grozi.rok === k.rok && grozi.q === k.q) klasaStanu = klasaProgu(grozi.statusNaKoniec);
+    else if (!k.przekroczenie && k.prognozaPrzekroczenia) klasaStanu = klasaProgu(k.statusZPlanem);
     if (k.bezKursu) opis += ` · bez kursu: ${k.bezKursu}`;
+    if (k.zaplanowane) opis += ` · zaplanowane: ${formatujZl(k.zaplanowaneGr)}`;
     return el('tr', {},
       el('th', { scope: 'row', tekst: `${['I', 'II', 'III', 'IV'][k.q - 1]} ${k.rok}` }),
       el('td', { klasa: 'num', tekst: formatujZl(k.sumaGr) }),
@@ -294,8 +344,11 @@ function linkRejestracji() {
 
 function renderujPrzekroczenie() {
   const box = $('przekroczenie-stan');
-  const h = historiaKwartalow(stan.wpisy).find((k) => k.przekroczenie);
+  const historia = historiaKwartalow(stan.wpisy, dzis());
+  const h = historia.find((k) => k.przekroczenie);
   const p = prognoza(stan.wpisy, dzis());
+  // Najbliższy kwartał po bieżącym, w którym limit przekroczy zaplanowana sprzedaż (historia jest od najnowszego).
+  const planowane = historia.filter((k) => k.prognozaPrzekroczenia && !(p && k.rok === p.rok && k.q === p.q)).pop() ?? null;
   box.className = 'ramka';
   if (h) {
     box.classList.add('alarm');
@@ -303,11 +356,22 @@ function renderujPrzekroczenie() {
       el('p', { klasa: 'ramka-tytul', tekst: `Limit przekroczony ${dataPl(h.przekroczenie.data)} (${etykietaKwartalu(h.rok, h.q)}).` }),
       el('p', { tekst: `Termin na wniosek do CEIDG mija ${dataPlZDniem(h.przekroczenie.termin)}, czyli 7 dni od przekroczenia.` }),
       el('p', {}, 'Jak złożyć wniosek, opisuje ', linkRejestracji(), '.'));
-  } else if (p?.przekroczenie?.prognoza) {
+  } else if (p?.przekroczenie?.prognoza && p.przyczynaPrzekroczenia === 'plan') {
     box.classList.add('uwaga-ramka');
     zastap(box,
+      el('p', { klasa: 'ramka-tytul', tekst: `Według zaplanowanych sprzedaży limit zostanie przekroczony ${dataPl(p.przekroczenie.data)}.` }),
+      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Zaplanowane sprzedaże są większe niż zapas do limitu (${formatujZl(p.zapasGr)}).` }));
+  } else if (p?.przekroczenie?.prognoza) {
+    box.classList.add('uwaga-ramka');
+    const poPlanie = p.zaplanowaneGr !== 0n ? ' po odjęciu zaplanowanych sprzedaży' : '';
+    zastap(box,
       el('p', { klasa: 'ramka-tytul', tekst: `Przy obecnym tempie limit zostanie przekroczony około ${dataPl(p.przekroczenie.data)}.` }),
-      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Do limitu zostało ${formatujZl(p.zapasGr)}.` }));
+      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Do limitu zostało ${formatujZl(p.wolneGr)}${poPlanie}.` }));
+  } else if (planowane) {
+    box.classList.add('uwaga-ramka');
+    zastap(box,
+      el('p', { klasa: 'ramka-tytul', tekst: `Według zaplanowanych sprzedaży limit zostanie przekroczony ${dataPl(planowane.prognozaPrzekroczenia.data)} (${etykietaKwartalu(planowane.rok, planowane.q)}).` }),
+      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(planowane.prognozaPrzekroczenia.termin)}. Zmniejsz albo przesuń zaplanowaną sprzedaż, jeśli chcesz zmieścić się w limicie.` }));
   } else {
     zastap(box, el('p', { tekst: stan.wpisy.length
       ? 'Na razie limit nie jest przekroczony i prognoza na ten kwartał tego nie przewiduje.'
@@ -430,6 +494,11 @@ function zapiszFormularz(ev) {
   const v = wartosciFormularza();
   if (!v.data) { pokazBladFormularza('Podaj datę sprzedaży.', 'f-data'); return; }
   if (!v.kwota.trim()) { pokazBladFormularza('Wpisz kwotę, np. 49,90.', 'f-kwota'); return; }
+  if (niejednoznacznaKwota(v.kwota)) {
+    const t = opisNiejednoznacznejKwoty(v.kwota);
+    pokazBladFormularza(`${t[0].toUpperCase()}${t.slice(1)}.`, 'f-kwota');
+    return;
+  }
   let wpis;
   try {
     wpis = normalizujWpis({
@@ -445,7 +514,8 @@ function zapiszFormularz(ev) {
     return;
   }
   if (stan.przyklad) { stan.przyklad = false; stan.wpisy = []; }
-  const edycja = Boolean(stan.edytowany);
+  // Wpis mógł zniknąć w innej karcie w czasie edycji: wtedy zapisujemy go jako nowy, zamiast go zgubić.
+  const edycja = Boolean(stan.edytowany) && stan.wpisy.some((w) => w.id === stan.edytowany);
   const wpisy = edycja ? stan.wpisy.map((w) => (w.id === wpis.id ? wpis : w)) : [...stan.wpisy, wpis];
   const { rok, q } = kwartal(wpis.data);
   stan.filtr = kluczKwartalu(rok, q);
@@ -464,7 +534,7 @@ function zapiszFormularz(ev) {
 function pokazPotwierdzenie(wpis, edycja) {
   const gr = kwotaPlnGr(wpis);
   const { rok, q } = kwartal(wpis.data);
-  const kw = historiaKwartalow(stan.wpisy).find((k) => k.rok === rok && k.q === q);
+  const kw = historiaKwartalow(stan.wpisy, dzis()).find((k) => k.rok === rok && k.q === q);
   const p = prognoza(stan.wpisy, dzis());
   const biezacy = p && p.rok === rok && p.q === q;
   const kwota = gr === null ? `${liczbaPl(wpis.kwota)} ${wpis.waluta} (bez kursu, nie liczy się do limitu)` : formatujZl(gr);
@@ -472,10 +542,19 @@ function pokazPotwierdzenie(wpis, edycja) {
   let klasa = 'poziom-ok';
   if (kw?.status) {
     klasa = klasaProgu(kw.status);
-    stanKw = kw.status.przekroczony
-      ? `${etykietaKwartalu(rok, q)}: ${procentTekst(kw.status.procent)} limitu, limit przekroczony.`
-      : `${etykietaKwartalu(rok, q)}: ${procentTekst(kw.status.procent)} limitu, zostało ${formatujZl(kw.status.pozostaloGr)}.`;
-    if (biezacy && p.przekroczenie?.prognoza) {
+    const etykieta = etykietaKwartalu(rok, q);
+    const doDzis = kw.zaplanowane ? ' do dziś' : '';
+    if (kw.status.przekroczony) {
+      stanKw = `${etykieta}: ${procentTekst(kw.status.procent)} limitu, limit przekroczony.`;
+    } else if (kw.prognozaPrzekroczenia) {
+      // „Zostało” liczymy od limitu minus sprzedaż do dziś i zaplanowana; tu plan już przekracza limit.
+      klasa = klasaProgu(kw.statusZPlanem);
+      stanKw = `${etykieta}: ${procentTekst(kw.status.procent)} limitu${doDzis}. Według zaplanowanych sprzedaży przekroczysz limit ${dataPl(kw.prognozaPrzekroczenia.data)}.`;
+    } else {
+      const poPlanie = kw.zaplanowane ? ' po zaplanowanych sprzedażach' : '';
+      stanKw = `${etykieta}: ${procentTekst(kw.status.procent)} limitu${doDzis}, zostało ${formatujZl(kw.wolneGr)}${poPlanie}.`;
+    }
+    if (biezacy && p.przekroczenie?.prognoza && p.przyczynaPrzekroczenia === 'tempo') {
       klasa = klasaProgu(p.statusNaKoniec);
       stanKw += ` Przy obecnym tempie przekroczysz limit około ${dataPl(p.przekroczenie.data)}.`;
     }
@@ -741,7 +820,7 @@ function pokazPrzyklad() {
 async function wyczysc() {
   const odp = await zapytaj({
     tytul: 'Wyczyścić dane?',
-    tekst: 'Usuniemy wszystkie wpisy z tej strony i z pamięci tej przeglądarki. Jeśli nie masz zapisanego pliku, nie da się ich odzyskać.',
+    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury, dane klientów i zapamiętane przekroczenie limitu KSeF. Bez zapisanego pliku i PDF faktur nie da się ich odzyskać.',
     przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyczyść dane', wynik: true, klasa: 'niebezpieczny' }],
   });
   if (!odp) return;
@@ -758,17 +837,31 @@ async function wyczysc() {
   oglos('Dane wyczyszczone.');
 }
 
-function zmienPamiec() {
-  stan.pamietaj = $('pamietaj').checked;
-  if (stan.pamietaj) {
+async function zmienPamiec() {
+  if ($('pamietaj').checked) {
+    stan.pamietaj = true;
     magazyn.zapiszUstawienia({ pamietaj: true, osoba: $('druk-osoba').value.trim() || undefined });
+    // Pamięć mogła być włączona w innej karcie: łączymy wpisy z tej strony z zapisanymi, zamiast je nadpisać.
+    if (!stan.przyklad) {
+      const lokalne = stan.wpisy;
+      wczytajZMagazynu();
+      stan.wpisy = polaczWpisy(stan.wpisy, lokalne);
+      odswiez();
+    }
     utrwal();
     oglos('Wpisy będą pamiętane w tej przeglądarce.');
-  } else {
-    magazyn.wyczysc();
-    magazyn.zapiszUstawienia({ pamietaj: false });
-    oglos('Wpisy nie będą pamiętane. Zapisz plik przed zamknięciem strony.');
+    return;
   }
+  const odp = await zapytaj({
+    tytul: 'Wyłączyć pamięć przeglądarki?',
+    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, faktury, dane klientów i zapamiętane przekroczenie limitu KSeF. Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.',
+    przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
+  });
+  if (!odp) { $('pamietaj').checked = true; return; }
+  stan.pamietaj = false;
+  magazyn.wyczysc();
+  magazyn.zapiszUstawienia({ pamietaj: false });
+  oglos('Pamięć wyłączona. Dane usunięte z tej przeglądarki, zapisz plik przed zamknięciem strony.');
 }
 
 // ------------------------------------------------------------ start
@@ -803,10 +896,12 @@ function start() {
   $('pamietaj').addEventListener('change', zmienPamiec);
   $('wyczysc').addEventListener('click', wyczysc);
 
-  // Bez pamięci przeglądarki: ostrzeżenie przed zamknięciem strony z niezapisanymi wpisami.
+  // Bez pamięci przeglądarki albo po nieudanym zapisie w niej: ostrzeżenie przed zamknięciem strony z niezapisanymi wpisami.
   window.addEventListener('beforeunload', (ev) => {
-    if (!stan.pamietaj && !stan.przyklad && stan.wpisy.length && stan.zmianyOdZapisuPliku) ev.preventDefault();
+    if ((!stan.pamietaj || stan.zapisNieudany) && !stan.przyklad && stan.wpisy.length && stan.zmianyOdZapisuPliku) ev.preventDefault();
   });
+  // Ta sama strona otwarta w dwóch kartach: zmiana w jednej odświeża drugą.
+  window.addEventListener('storage', poZmianieWInnejKarcie);
 
   // Po powrocie na kartę z nowym dniem (np. po północy 31 grudnia) stan kwartału, limit roku i prognoza
   // liczą się od nowej daty, a nie od dnia otwarcia strony.

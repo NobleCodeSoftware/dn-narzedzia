@@ -7,7 +7,7 @@ Bez kont i bez serwera aplikacji: wszystko działa w przeglądarce.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.4. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
+Wersja 0.4.1. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
@@ -40,6 +40,11 @@ Kwoty są liczone w groszach na `BigInt`, bez liczb zmiennoprzecinkowych.
 dzień, w którym prognozowana suma przekracza limit. Prognoza jest oznaczona jako mało pewna, gdy od początku kwartału
 minęło mniej niż 14 dni albo są mniej niż 3 wpisy.
 
+Stan kwartału (suma, zapas, progi osiągnięte i przekroczenie) liczy tylko sprzedaż do dziś włącznie. Sprzedaż z datą
+po dziś jest zaplanowana: widok pokazuje ją osobno, a prognoza na dany dzień to sprzedaż do dziś plus większa z kwot:
+wynik tempa albo zaplanowana sprzedaż do tego dnia (bez liczenia jej dwa razy). Sprzedaż w walucie bez kursu NBP nie
+wchodzi do sumy, a stan kwartału mówi, ile takich wpisów jest i że suma może być zaniżona.
+
 ### Kurs NBP
 
 Dzień kursu wynika z kalendarza (`kalendarz.js`): ostatni dzień roboczy przed datą sprzedaży, z pominięciem weekendów
@@ -47,6 +52,8 @@ i świąt. Kalendarz porównano z datami tabel A NBP od 1.01.2025 do 21.10.2026 
 Strona pyta o zakres 10 dni kończący się na dniu kursu (`/api/exchangerates/rates/a/{kod}/{od}/{do}/`) i bierze ostatnią
 tabelę nie późniejszą niż dzień kursu. Gdy dzień kursu to dziś, a tabeli jeszcze nie ma, strona nie bierze starszego kursu.
 API NBP odpowiada nagłówkiem `Access-Control-Allow-Origin: *` (także na 404), więc działa z przeglądarki.
+Kurs jest zapisywany tak, jak podaje go NBP, bez zaokrąglania: część walut ma więcej niż 4 miejsca po przecinku
+(np. HUF 0,012115, IDR 0,00021529).
 
 ### Kolumny ewidencji i wydruk
 
@@ -54,6 +61,12 @@ Przepisy nie określają dokładnie, co ma zawierać uproszczona ewidencja sprze
 Według [biznes.gov.pl](https://www.biznes.gov.pl/pl/portal/00115) zwykle są to: liczba porządkowa, data sprzedaży,
 wartość sprzedaży i wartość narastająco od początku roku; można dopisać numer dowodu albo rodzaj transakcji.
 Wydruk ma te kolumny oraz opis, narastająco w kwartale i walutę z kursem.
+
+### Import
+
+Import XLSX/CSV przyjmuje kwoty w zapisie polskim i angielskim („1 234,50”, „1.234,50”, „1,234.50”). Kwotę z jednym
+separatorem i dokładnie trzema cyframi po nim („1,234”, „1.234”) odrzuca z błędem wiersza, bo może oznaczać 1234 zł
+albo 1,234 zł; formularz pokazuje wtedy komunikat.
 
 ### Eksport XLSX
 
@@ -124,6 +137,10 @@ Zmieniaj je razem.
   i `referrerPolicy: 'no-referrer'` (nagłówek `Origin` z adresem strony przeglądarka wysyła przy zapytaniu CORS zawsze).
 - CSP: `default-src 'none'`, `connect-src 'self' https://api.nbp.pl` (`'self'` dla wzoru arkusza przy eksporcie).
 - `localStorage` tylko w `magazyn.js`, z przełącznikiem i przyciskiem „Wyczyść dane”. Bez zapisu w przeglądarce strona ostrzega przed zamknięciem z niezapisanymi wpisami.
+  Wyłączenie przełącznika pyta o potwierdzenie na obu stronach, bo usuwa też faktury i dane klientów. Gdy pamięć jest
+  niedostępna, przełącznik jest wyłączony; gdy zapis się nie uda, ewidencja pokazuje komunikat i ostrzega przed zamknięciem.
+  Strona otwarta w dwóch kartach wczytuje dane ponownie po zmianie w drugiej karcie (zdarzenie `storage`), a faktura
+  przed wystawieniem liczy numer i regułę KSeF od listy faktur z pamięci przeglądarki.
 - Faktury, dane sprzedawcy, zapisani klienci i zapamiętany miesiąc utraty prawa do faktur poza KSeF są w `localStorage`
   (klucz `dn-faktury-v1`), pod tym samym przełącznikiem „Pamiętaj wpisy” co ewidencja; „Wyczyść dane” usuwa je razem
   z ewidencją. Strona faktury nie łączy się z siecią.

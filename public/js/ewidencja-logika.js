@@ -76,7 +76,7 @@ export function normalizujWpis(w) {
 export function tekstLiczby(wartosc) {
   if (typeof wartosc === 'number') {
     if (!Number.isFinite(wartosc)) throw new BladDanych('liczba');
-    // Liczby z arkusza (np. 49.900000000000006) obcinamy do 8 miejsc po przecinku.
+    // Liczby z arkusza (np. 49.900000000000006) zaokrąglamy do 8 miejsc po przecinku.
     const t = wartosc.toFixed(8).replace(/\.?0+$/, '');
     return t === '-0' ? '0' : t;
   }
@@ -99,6 +99,24 @@ export function tekstLiczby(wartosc) {
   return s ? `${znak}${a.slice(0, -s)}.${a.slice(-s)}` : `${znak}${a}`;
 }
 
+/**
+ * Czy tekst kwoty jest niejednoznaczny: jeden separator i dokładnie trzy cyfry po nim („1,234”, „1.234”).
+ * Może to być 1234 zł z separatorem tysięcy albo 1,234 zł, więc takiej kwoty nie zgadujemy.
+ * Liczby (np. komórki liczbowe arkusza) i zapisy z dwoma separatorami („1.234,50”) są jednoznaczne.
+ */
+export function niejednoznacznaKwota(wartosc) {
+  if (typeof wartosc !== 'string') return false;
+  const t = wartosc.trim().replace(/[\s  ]/g, '').replace(/(zł|pln)$/i, '').replace(/^[+\-−]/, '');
+  return /^[1-9]\d{0,2}[.,]\d{3}$/.test(t);
+}
+
+/** Komunikat dla niejednoznacznej kwoty, np. „1,234”: podaje oba możliwe odczyty. */
+export function opisNiejednoznacznejKwoty(wartosc) {
+  const t = String(wartosc).trim();
+  const [calosc, ulamek] = t.replace(/[\s  ]/g, '').replace(/(zł|pln)$/i, '').split(/[.,]/);
+  return `kwota ${t} jest niejednoznaczna: wpisz ${calosc}${ulamek} (bez separatora tysięcy) albo ${calosc},${ulamek.slice(0, 2)}`;
+}
+
 /** Kwota w PLN (grosze) albo null, gdy sprzedaż w walucie nie ma kursu. Zaokrąglenie jak ROUND(C*E,2). */
 export function kwotaPlnGr(w) {
   if (w.waluta === 'PLN') return naGrosze(w.kwota);
@@ -118,12 +136,15 @@ export function posortuj(wpisy) {
 
 // ------------------------------------------------------------ kwartały
 
-/** Narastająca suma kwartału dzień po dniu: [{ data, dzienGr, sumaGr }] (tylko dni z wpisami z kwotą PLN). */
-export function przebiegKwartalu(wpisy, rok, q) {
+/**
+ * Narastająca suma kwartału dzień po dniu: [{ data, dzienGr, sumaGr }] (tylko dni z wpisami z kwotą PLN).
+ * dzis (opcjonalnie): pomija sprzedaż z datą późniejszą, czyli zaplanowaną, której jeszcze nie było.
+ */
+export function przebiegKwartalu(wpisy, rok, q, dzis = null) {
   const { od, doDnia } = granicaKwartalu(rok, q);
   const dni = new Map();
   for (const w of wpisy) {
-    if (w.data < od || w.data > doDnia) continue;
+    if (w.data < od || w.data > doDnia || (dzis && w.data > dzis)) continue;
     const gr = kwotaPlnGr(w);
     if (gr === null) continue;
     dni.set(w.data, (dni.get(w.data) ?? 0n) + gr);
@@ -153,18 +174,26 @@ export function kwotaProgu(limitGr, prog) {
 
 /**
  * Historia kwartałów: wszystkie kwartały z wpisami, od najnowszego.
- * [{ rok, q, klucz, sumaGr, liczba, bezKursu, limitGr, status, przekroczenie: { data, termin } | null }]
+ * [{ rok, q, klucz, sumaGr, liczba, bezKursu, zaplanowaneGr, zaplanowane, limitGr, status, przekroczenie: { data, termin } | null,
+ *    statusZPlanem, wolneGr, prognozaPrzekroczenia: { data, termin, prognoza: true } | null }]
+ * dzis (opcjonalnie): sprzedaż z późniejszą datą nie wchodzi do sumy, stanu ani daty przekroczenia,
+ * tylko do zaplanowaneGr i zaplanowane (liczba wpisów). Bez dzis liczy wszystkie wpisy, jak arkusz.
+ * Z planem (prognoza): statusZPlanem (sprzedaż do dziś i zaplanowana), wolneGr (limit minus jedno i drugie, co najmniej 0)
+ * i prognozaPrzekroczenia, gdy limit przekroczy dopiero zaplanowana sprzedaż.
  */
-export function historiaKwartalow(wpisy) {
+export function historiaKwartalow(wpisy, dzis = null) {
   const grupy = new Map();
   for (const w of wpisy) {
     const { rok, q } = kwartal(w.data);
     const k = kluczKwartalu(rok, q);
-    if (!grupy.has(k)) grupy.set(k, { rok, q, klucz: k, sumaGr: 0n, liczba: 0, bezKursu: 0 });
+    if (!grupy.has(k)) grupy.set(k, { rok, q, klucz: k, sumaGr: 0n, liczba: 0, bezKursu: 0, zaplanowaneGr: 0n, zaplanowane: 0 });
     const g = grupy.get(k);
     g.liczba += 1;
     const gr = kwotaPlnGr(w);
-    if (gr === null) g.bezKursu += 1; else g.sumaGr += gr;
+    if (dzis && w.data > dzis) {
+      g.zaplanowane += 1;
+      if (gr !== null) g.zaplanowaneGr += gr;
+    } else if (gr === null) g.bezKursu += 1; else g.sumaGr += gr;
   }
   return [...grupy.values()]
     .sort((a, b) => (b.rok - a.rok) || (b.q - a.q))
@@ -173,10 +202,18 @@ export function historiaKwartalow(wpisy) {
       const status = limitGr === null ? null : statusLimitu(g.sumaGr, limitGr);
       let przekroczenie = null;
       if (limitGr !== null) {
-        const data = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, g.rok, g.q), limitGr, 'przekroczenie');
+        const data = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, g.rok, g.q, dzis), limitGr, 'przekroczenie');
         if (data) przekroczenie = { data, termin: dodajDni(data, DNI_NA_WNIOSEK_CEIDG) };
       }
-      return { ...g, limitGr, status, przekroczenie };
+      const statusZPlanem = limitGr === null ? null : statusLimitu(g.sumaGr + g.zaplanowaneGr, limitGr);
+      const wolne = limitGr === null ? null : limitGr - g.sumaGr - g.zaplanowaneGr;
+      const wolneGr = wolne === null ? null : (wolne > 0n ? wolne : 0n);
+      let prognozaPrzekroczenia = null;
+      if (limitGr !== null && !przekroczenie && g.zaplanowane) {
+        const data = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, g.rok, g.q), limitGr, 'przekroczenie');
+        if (data) prognozaPrzekroczenia = { data, termin: dodajDni(data, DNI_NA_WNIOSEK_CEIDG), prognoza: true };
+      }
+      return { ...g, limitGr, status, przekroczenie, statusZPlanem, wolneGr, prognozaPrzekroczenia };
     });
 }
 
@@ -184,7 +221,10 @@ export function historiaKwartalow(wpisy) {
 
 /**
  * Prognoza dla kwartału, w którym jest `dzis`.
- * Metoda: średnia dzienna sprzedaż od początku kwartału do dziś (włącznie) × pozostałe dni kwartału.
+ * Stan (suma, zapas, status, dni osiągnięcia progów) liczymy tylko ze sprzedaży do dziś włącznie.
+ * Prognoza: średnia dzienna sprzedaż od początku kwartału do dziś × kolejne dni. Sprzedaż z datą po dziś
+ * (zaplanowana) wchodzi tylko do prognozy: w danym dniu prognozowana suma to sprzedaż do dziś plus większa
+ * z dwóch kwot: wynik tempa albo zaplanowana sprzedaż do tego dnia. Tak tej samej sprzedaży nie liczymy dwa razy.
  * Zwraca null, gdy brak limitu dla roku.
  */
 export function prognoza(wpisy, dzis) {
@@ -192,32 +232,35 @@ export function prognoza(wpisy, dzis) {
   const limitGr = limitLubNull(rok);
   if (limitGr === null) return null;
   const { od, doDnia } = granicaKwartalu(rok, q);
-  const przebieg = przebiegKwartalu(wpisy, rok, q);
+  const przebieg = przebiegKwartalu(wpisy, rok, q, dzis);
   const sumaGr = przebieg.length ? przebieg[przebieg.length - 1].sumaGr : 0n;
-  const doDzis = przebieg.filter((p) => p.data <= dzis);
-  const sumaDoDzisGr = doDzis.length ? doDzis[doDzis.length - 1].sumaGr : 0n;
   const dniMinelo = roznicaDni(od, dzis) + 1;
   const dniZostalo = roznicaDni(dzis, doDnia); // pełne dni po dzisiejszym
-  const liczbaWpisow = wpisy.filter((w) => w.data >= od && w.data <= dzis).length;
+  const wKwartale = wpisy.filter((w) => w.data >= od && w.data <= doDnia);
+  const liczbaWpisow = wKwartale.filter((w) => w.data <= dzis).length;
+  // Sprzedaż w walucie bez kursu nie ma kwoty w PLN: nie wchodzi do sumy, więc suma może być zaniżona.
+  const bezKursu = wKwartale.filter((w) => w.data <= dzis && kwotaPlnGr(w) === null).length;
+  const zaplanowane = posortuj(wKwartale.filter((w) => w.data > dzis));
+  const zaplanowaneGr = zaplanowane.reduce((s, w) => s + (kwotaPlnGr(w) ?? 0n), 0n);
   const zapasGr = limitGr - sumaGr;
-  const tempo = sumaDoDzisGr > 0n ? sumaDoDzisGr : 0n; // tempo = tempo / dniMinelo na dzień
+  const tempo = sumaGr > 0n ? sumaGr : 0n; // tempo / dniMinelo na dzień
+  const D = BigInt(dniMinelo);
 
-  // k dni po dziś, w którym prognozowana suma osiągnie próg (null, gdy po końcu kwartału albo brak tempa).
+  // Prognozowana suma k dni po dziś, pomnożona przez dniMinelo (bez dzielenia, więc bez zaokrągleń).
+  const sumaPoDniach = (k) => {
+    const data = dodajDni(dzis, k);
+    const planGr = zaplanowane.reduce((s, w) => (w.data <= data ? s + (kwotaPlnGr(w) ?? 0n) : s), 0n);
+    const zTempa = tempo * BigInt(k);
+    const zPlanu = planGr * D;
+    return sumaGr * D + (zTempa > zPlanu ? zTempa : zPlanu);
+  };
+  // Pierwszy dzień po dziś, w którym prognozowana suma osiągnie próg (null, gdy nie w tym kwartale).
   const dzienProgu = (prog) => {
-    let k;
-    if (prog === 'przekroczenie') {
-      if (zapasGr < 0n) return null;
-      if (tempo === 0n) return null;
-      k = (zapasGr * BigInt(dniMinelo)) / tempo + 1n;
-    } else {
-      const { v, s } = parsujDziesietna(prog);
-      const brak = limitGr * v - sumaGr * 10n ** BigInt(s); // w jednostkach 10^-s grosza
-      if (brak <= 0n) return null;
-      if (tempo === 0n) return null;
-      k = dzielWGore(brak * BigInt(dniMinelo), tempo * 10n ** BigInt(s));
+    for (let k = 1; k <= dniZostalo; k += 1) {
+      const suma = sumaPoDniach(k);
+      if (prog === 'przekroczenie' ? suma > limitGr * D : osiagniety(suma, limitGr * D, prog)) return dodajDni(dzis, k);
     }
-    if (k > BigInt(dniZostalo)) return null;
-    return dodajDni(dzis, Number(k));
+    return null;
   };
 
   const progi = [...PROGI, 'przekroczenie'].map((prog) => {
@@ -229,21 +272,44 @@ export function prognoza(wpisy, dzis) {
       prognozaDnia: osiagnietyDnia ? null : dzienProgu(prog),
     };
   });
-  const sumaNaKoniecGr = sumaGr + (tempo * BigInt(dniZostalo)) / BigInt(dniMinelo);
+  // Sama sprzedaż do dziś i zaplanowana (bez tempa): kiedy przekroczy limit i ile zostaje po niej.
+  const dzienPlanu = zaplanowane.length ? dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, rok, q), limitGr, 'przekroczenie') : null;
+  const planPrzekroczenie = !progi.find((p) => p.prog === 'przekroczenie').osiagnietyDnia && dzienPlanu
+    ? { data: dzienPlanu, termin: dodajDni(dzienPlanu, DNI_NA_WNIOSEK_CEIDG), prognoza: true } : null;
+  const wolne = zapasGr - zaplanowaneGr;
+  const wolneGr = wolne > 0n ? wolne : 0n;
+  const naKoniecZTempa = (tempo * BigInt(dniZostalo)) / D;
+  const sumaNaKoniecGr = sumaGr + (naKoniecZTempa > zaplanowaneGr ? naKoniecZTempa : zaplanowaneGr);
   const przekr = progi.find((p) => p.prog === 'przekroczenie');
-  return {
-    rok, q, od, doDnia, limitGr, sumaGr, zapasGr, dniMinelo, dniZostalo, liczbaWpisow,
+  const wynik = {
+    rok, q, od, doDnia, limitGr, sumaGr, zapasGr, wolneGr, dniMinelo, dniZostalo, liczbaWpisow, bezKursu,
+    zaplanowaneGr, liczbaZaplanowanych: zaplanowane.length, planPrzekroczenie,
     status: statusLimitu(sumaGr, limitGr),
-    tempoDzienneGr: dzielZaokr(tempo, BigInt(dniMinelo)),
+    tempoDzienneGr: dzielZaokr(tempo, D),
     sumaNaKoniecGr,
     statusNaKoniec: statusLimitu(sumaNaKoniecGr, limitGr),
-    budzetDziennyGr: zapasGr > 0n ? zapasGr / BigInt(dniZostalo + 1) : 0n,
+    // Ile średnio dziennie można jeszcze sprzedać, żeby zmieścić się w limicie razem ze sprzedażą zaplanowaną.
+    budzetDziennyGr: wolneGr / BigInt(dniZostalo + 1),
     progi,
     przekroczenie: przekr.osiagnietyDnia
       ? { data: przekr.osiagnietyDnia, termin: dodajDni(przekr.osiagnietyDnia, DNI_NA_WNIOSEK_CEIDG), prognoza: false }
       : (przekr.prognozaDnia ? { data: przekr.prognozaDnia, termin: dodajDni(przekr.prognozaDnia, DNI_NA_WNIOSEK_CEIDG), prognoza: true } : null),
     pewnosc: dniMinelo < 14 || liczbaWpisow < 3 ? 'mala' : 'zwykla',
   };
+  // Przyczyna prognozowanego przekroczenia: sama zaplanowana sprzedaż ('plan') albo obecne tempo ('tempo').
+  if (wynik.przekroczenie?.prognoza) {
+    wynik.przyczynaPrzekroczenia = planPrzekroczenie && planPrzekroczenie.data === wynik.przekroczenie.data ? 'plan' : 'tempo';
+  } else wynik.przyczynaPrzekroczenia = null;
+  return wynik;
+}
+
+/**
+ * Wpisy z pamięci przeglądarki połączone z wpisami, które były tylko na stronie (np. przy wyłączonej pamięci):
+ * najpierw zapisane, potem lokalne o innym id. Żaden wpis nie znika i żaden się nie dubluje.
+ */
+export function polaczWpisy(zapisane, lokalne) {
+  const ids = new Set(zapisane.map((w) => w.id));
+  return [...zapisane, ...lokalne.filter((w) => !ids.has(w.id))];
 }
 
 // ------------------------------------------------------------ arkusz i wydruk
@@ -360,6 +426,7 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1 } = {}) {
     if (!data) { bledy.push({ wiersz: numer, powod: 'niepoprawna data' }); continue; }
     let opis = String(komorka(kol.opis));
     if (/^'[=+\-@]/.test(opis)) opis = opis.slice(1); // ochrona przed formułami z naszego eksportu CSV
+    if (niejednoznacznaKwota(surowaKwota)) { bledy.push({ wiersz: numer, powod: opisNiejednoznacznejKwoty(surowaKwota) }); continue; }
     try {
       wpisy.push(normalizujWpis({
         id: `i${wpisy.length + 1}`, data, opis, kwota: surowaKwota, waluta: String(komorka(kol.waluta)) || 'PLN', kurs: komorka(kol.kurs),

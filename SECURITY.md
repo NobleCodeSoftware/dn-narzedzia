@@ -15,8 +15,7 @@ Nie dołączaj arkuszy z prawdziwymi danymi ani danych osobowych.
 ## Czego się spodziewać
 - Potwierdzenie w ciągu 5 dni roboczych (projekt jest mały i prowadzony z udziałem agentów AI).
 - Ocena i, po potwierdzeniu, poprawka lub obejście oraz podziękowanie w opisie zmian, jeśli chcesz.
-- Aktywnie wykorzystywaną podatność traktujemy priorytetowo i zgłaszamy zgodnie z wymogami CRA
-  (wczesne ostrzeżenie w 24 h).
+- Aktywnie wykorzystywaną podatność poprawiamy priorytetowo, bez zbędnej zwłoki.
 - Skoordynowane ujawnienie: prosimy o rozsądny czas (proponujemy 90 dni) przed publikacją.
 
 ## Zakres
