@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { BladDanych } from '../public/js/logic.js';
+import { opisProgu, klasaProgu, procentTekst } from '../public/js/wspolne.js';
 import {
   normalizujWpis, tekstLiczby, kwotaPlnGr, historiaKwartalow, prognoza, przebiegKwartalu, wartosciArkusza,
   wierszeEwidencji, wierszeNaWpisy, odczytajDate, granicaKwartalu, kolejnyNumer, posortuj, kwotaProgu,
-  niejednoznacznaKwota, polaczWpisy,
+  niejednoznacznaKwota, polaczWpisy, ostrzezeniaZwrotow, opisOstrzezeniaZwrotu, statusKwartalu,
 } from '../public/js/ewidencja-logika.js';
 import { eksportujCsv, importujCsv, parsujCsv } from '../public/js/csv.js';
 import { eksportujXlsx, importujXlsx, komorkiArkusza } from '../public/js/xlsx.js';
@@ -434,4 +435,107 @@ test('XLSX: encja spoza Unicode daje czytelny błąd, nie RangeError', async () 
   const { odkodujXml } = await import('../public/js/xlsx.js');
   assert.equal(odkodujXml('&#x1F600;&amp;'), '😀&');
   assert.throws(() => odkodujXml('&#99999999;'), (e) => e instanceof BladDanych && /niepoprawny znak/.test(e.message));
+});
+
+// ---------------------------------------------------------------- zwroty a limit kwartalny
+
+test('zwroty: przekroczenie się nie cofa, status zostaje „przekroczony od D” mimo zwrotu poniżej limitu', () => {
+  // 6000 zł 5.10 i 5000 zł 20.10 (11 000 zł > 10 813,50 zł), potem zwrot 500 zł 3.11: suma 10 500 zł, czyli poniżej limitu.
+  const wpisy = [w('2026-10-05', '6000'), w('2026-10-20', '5000'), w('2026-11-03', '-500')];
+  const [kw] = historiaKwartalow(wpisy, '2026-11-05');
+  assert.equal(kw.sumaGr, 1050000n);
+  assert.deepEqual(kw.przekroczenie, { data: '2026-10-20', termin: '2026-10-27' });
+  assert.equal(kw.status.przekroczony, true);
+  assert.equal(kw.status.przekroczonyOd, '2026-10-20');
+  assert.equal(klasaProgu(kw.status), 'poziom-100');
+  assert.equal(opisProgu(kw.status), 'Limit przekroczony.');
+  assert.ok(!/Mieścisz|W limicie/.test(opisProgu(kw.status)));
+  const p = prognoza(wpisy, '2026-11-05');
+  assert.equal(p.sumaGr, 1050000n);
+  assert.equal(p.status.przekroczony, true);
+  assert.equal(p.status.przekroczonyOd, '2026-10-20');
+  assert.equal(p.statusNaKoniec.przekroczony, true);
+  assert.deepEqual(p.przekroczenie, { data: '2026-10-20', termin: '2026-10-27', prognoza: false });
+  // Zwrot po przekroczeniu niczego nie zmienia, więc nie ma ostrzeżenia o wyborze kwartału.
+  assert.deepEqual(ostrzezeniaZwrotow(wpisy, '2026-11-05'), []);
+  // Bez faktu przekroczenia status liczy się jak dotąd.
+  assert.equal(statusKwartalu(1050000n, 1081350n).przekroczony, false);
+});
+
+test('zwroty: ostrzeżenie, gdy zwrot w kwartale obniża sumę poniżej limitu, a bez niego limit byłby przekroczony', () => {
+  const wpisy = [w('2026-10-01', '6000'), w('2026-10-02', '-2000'), w('2026-10-20', '6000')];
+  const [kw] = historiaKwartalow(wpisy, '2026-11-05');
+  assert.equal(kw.sumaGr, 1000000n);
+  assert.equal(kw.przekroczenie, null, 'z tym zwrotem limit nie jest przekroczony');
+  const o = ostrzezeniaZwrotow(wpisy, '2026-11-05');
+  assert.equal(o.length, 1);
+  assert.equal(o[0].id, wpisy[1].id);
+  assert.equal(o[0].przyczyna, 'limit');
+  assert.equal(o[0].bezZwrotuPrzekroczenie, '2026-10-20');
+  assert.equal(opisOstrzezeniaZwrotu(o[0]), 'Przepisy nie rozstrzygają, do którego kwartału należy ten zwrot. Bez niego limit byłby przekroczony dnia 20.10.2026. Skonsultuj to z doradcą podatkowym.');
+  assert.deepEqual(kw.ostrzezenia, o, 'historia kwartału ma to samo ostrzeżenie');
+  assert.deepEqual(prognoza(wpisy, '2026-11-05').ostrzezenia, o, 'stan bieżącego kwartału też');
+  // Zwrot z datą po dziś (zaplanowany) nie daje ostrzeżenia.
+  assert.deepEqual(ostrzezeniaZwrotow([w('2026-10-01', '11000'), w('2026-12-01', '-500')], '2026-11-05'), []);
+});
+
+test('zwroty: zwrot w I kw. 2027 dotyczący sprzedaży z IV kw. 2026 daje ostrzeżenie i niczego nie przelicza wstecz', () => {
+  const zwrot = normalizujWpis({ id: 'z1', data: '2027-01-10', kwota: '-300', dotyczy: '2026-12-15', opis: 'Zwrot: obraz' });
+  assert.equal(zwrot.dotyczy, '2026-12-15');
+  const wpisy = [w('2026-12-15', '300'), w('2027-01-05', '1000'), zwrot];
+  const o = ostrzezeniaZwrotow(wpisy, '2027-02-01');
+  assert.equal(o.length, 1);
+  assert.equal(o[0].przyczyna, 'inny-kwartal');
+  assert.deepEqual([o[0].rok, o[0].q, o[0].dotyczy], [2027, 1, '2026-12-15']);
+  assert.equal(o[0].bezZwrotuPrzekroczenie, null);
+  assert.equal(opisOstrzezeniaZwrotu(o[0]), 'Przepisy nie rozstrzygają, do którego kwartału należy ten zwrot. Skonsultuj to z doradcą podatkowym.');
+  // Zwrot liczy się w kwartale swojej daty, a IV kwartał 2026 zostaje bez zmian.
+  const h = historiaKwartalow(wpisy, '2027-02-01');
+  assert.equal(h.find((k) => k.klucz === '2027-1').sumaGr, 70000n);
+  assert.equal(h.find((k) => k.klucz === '2026-4').sumaGr, 30000n);
+  assert.deepEqual(h.find((k) => k.klucz === '2026-4').ostrzezenia, []);
+  // Ten sam kwartał: bez ostrzeżenia.
+  assert.deepEqual(ostrzezeniaZwrotow([w('2027-01-05', '1000'), normalizujWpis({ id: 'z2', data: '2027-02-01', kwota: '-100', dotyczy: '2027-01-05' })], '2027-02-01'), []);
+  // Gdy bez zwrotu limit byłby przekroczony, ostrzeżenie podaje też datę.
+  const duze = [w('2027-01-05', '11500'), normalizujWpis({ id: 'z3', data: '2027-01-04', kwota: '-500', dotyczy: '2026-12-20' })];
+  assert.match(opisOstrzezeniaZwrotu(ostrzezeniaZwrotow(duze, '2027-02-01')[0]), /Bez niego limit byłby przekroczony dnia 05\.01\.2027\./);
+});
+
+test('zwroty: pole „dotyczy sprzedaży z dnia” tylko przy zwrocie i nie później niż data zwrotu', () => {
+  assert.throws(() => normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '-300', dotyczy: '2027-01-11' }), /nie może być późniejsza/);
+  assert.throws(() => normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '-300', dotyczy: '2027-02-30' }), /dotyczy zwrot/);
+  assert.equal('dotyczy' in normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '300', dotyczy: '2026-12-01' }), false, 'sprzedaż: pole pomijane');
+  assert.equal('dotyczy' in normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '-300', dotyczy: '' }), false);
+});
+
+test('zwroty: kwartał z samymi zwrotami ma 0% i pusty pasek, a nadwyżka zwrotów nie przechodzi do innego kwartału', () => {
+  const wpisy = [w('2026-07-10', '-500'), w('2026-10-01', '1000')];
+  const h = historiaKwartalow(wpisy, '2026-11-05');
+  const q3 = h.find((k) => k.klucz === '2026-3');
+  assert.equal(q3.sumaGr, -50000n);
+  assert.equal(q3.status.procent, 0);
+  assert.equal(procentTekst(q3.status.procent), '0,0%');
+  assert.equal(h.find((k) => k.klucz === '2026-4').sumaGr, 100000n);
+  const p = prognoza([w('2026-10-02', '-500')], '2026-11-05');
+  assert.equal(p.status.procent, 0);
+  assert.equal(p.statusNaKoniec.procent, 0);
+  assert.equal(p.tempoDzienneGr, 0n);
+});
+
+test('kwartał w przyszłości jest oznaczony (bez „0,0% limitu do dziś” w widoku)', () => {
+  const h = historiaKwartalow([w('2026-10-01', '500'), w('2027-01-12', '1000')], '2026-11-04');
+  assert.equal(h.find((k) => k.klucz === '2027-1').przyszly, true);
+  assert.equal(h.find((k) => k.klucz === '2026-4').przyszly, false);
+  assert.equal(historiaKwartalow([w('2027-01-12', '1000')])[0].przyszly, false, 'bez daty dzisiejszej nie ma przyszłości');
+});
+
+test('łączenie wpisów z tym samym id: wygrywa później zmieniona wersja, bez znaczników wersja z pamięci', () => {
+  const stary = normalizujWpis({ id: 'x', data: '2026-10-01', kwota: '10', zmieniono: '2026-11-01T10:00:00.000Z' });
+  const nowy = normalizujWpis({ id: 'x', data: '2026-10-01', kwota: '15', zmieniono: '2026-11-02T08:00:00.000Z' });
+  assert.deepEqual(polaczWpisy([stary], [nowy]).map((x) => x.kwota), ['15'], 'lokalna zmiana nowsza');
+  assert.deepEqual(polaczWpisy([nowy], [stary]).map((x) => x.kwota), ['15'], 'zapisana zmiana nowsza');
+  const bezZnacznika = normalizujWpis({ id: 'x', data: '2026-10-01', kwota: '20' });
+  assert.deepEqual(polaczWpisy([bezZnacznika], [{ ...bezZnacznika, kwota: '25' }]).map((x) => x.kwota), ['20'], 'bez znaczników: pamięć');
+  assert.deepEqual(polaczWpisy([bezZnacznika], [stary]).map((x) => x.kwota), ['10'], 'zmieniona w formularzu wygrywa z wpisem bez znacznika');
+  assert.equal(normalizujWpis({ id: 'x', data: '2026-10-01', kwota: '1', zmieniono: 'wczoraj' }).zmieniono, undefined);
 });

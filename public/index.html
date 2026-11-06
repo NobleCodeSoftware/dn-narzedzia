@@ -103,6 +103,7 @@
         <p class="skala" aria-hidden="true"><span>0%</span><span>70</span><span>85</span><span>100%</span></p>
         <p id="stan-status" class="status"></p>
         <p id="stan-bez-kursu" class="podpowiedz ostrzezenie-tekst" hidden></p>
+        <p id="stan-zwroty" class="podpowiedz ostrzezenie-tekst" hidden></p>
         <dl class="liczby">
           <div><dt>Sprzedaż w kwartale</dt><dd id="stan-suma"></dd></div>
           <div><dt>Zostało do limitu</dt><dd id="stan-zapas"></dd></div>
@@ -130,8 +131,9 @@
       <form id="wpis-form" novalidate>
         <div class="siatka">
           <div class="pole">
-            <label for="f-data">Data sprzedaży</label>
-            <input id="f-data" name="data" type="date" required min="2020-01-01" max="2035-12-31">
+            <label for="f-data" id="etykieta-data">Data sprzedaży</label>
+            <input id="f-data" name="data" type="date" required min="2020-01-01" max="2035-12-31" aria-describedby="f-data-zwrot">
+            <p id="f-data-zwrot" class="podpowiedz" hidden>Podaj datę dokumentu korekty (faktury korygującej albo innego dokumentu, np. potwierdzenia zwrotu pieniędzy), a nie datę sprzedaży.</p>
           </div>
           <div class="pole">
             <label for="f-kwota">Kwota</label>
@@ -141,6 +143,11 @@
           <div class="pole">
             <label for="f-waluta">Waluta</label>
             <select id="f-waluta" name="waluta"></select>
+          </div>
+          <div class="pole" id="pole-dotyczy" hidden>
+            <label for="f-dotyczy">Zwrot dotyczy sprzedaży z dnia <span class="opcjonalne">(nieobowiązkowe)</span></label>
+            <input id="f-dotyczy" name="dotyczy" type="date" min="2020-01-01" max="2035-12-31" aria-describedby="f-dotyczy-podp">
+            <p id="f-dotyczy-podp" class="podpowiedz">Zwrot i tak liczy się w kwartale daty zwrotu. Ta data służy tylko do ostrzeżenia i nie trafia do pliku CSV ani XLSX.</p>
           </div>
           <div class="pole" id="pole-kurs" hidden>
             <label for="f-kurs">Kurs średni NBP</label>
@@ -238,9 +245,22 @@
       <h3>Pamięć przeglądarki</h3>
       <div class="przelacznik">
         <input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">
-        <label for="pamietaj">Pamiętaj wpisy w tej przeglądarce</label>
+        <label for="pamietaj">Pamiętaj wpisy ewidencji</label>
       </div>
-      <p id="pamietaj-info" class="podpowiedz">Wyłączenie usuwa z tej przeglądarki także faktury i dane klientów. Bez tej opcji wpisy znikną po zamknięciu strony, chyba że zapiszesz plik.</p>
+      <p id="pamietaj-info" class="podpowiedz">Obejmuje też wystawione faktury, ale bez danych osobowych (numer, daty, kwota, rodzaj klienta), chyba że włączysz opcję niżej. Bez tej opcji wpisy znikną po zamknięciu strony, chyba że zapiszesz plik.</p>
+      <div class="przelacznik">
+        <input type="checkbox" id="pamietaj-dane" aria-describedby="pamietaj-dane-zakres pamietaj-dane-info">
+        <label for="pamietaj-dane">Zapamiętaj moje dane i dane klientów do faktur</label>
+      </div>
+      <p id="pamietaj-dane-zakres" class="podpowiedz">Obejmuje też pełne faktury do ponownego wydruku z listy i imię do wydruku ewidencji.</p>
+      <p id="pamietaj-dane-info" class="podpowiedz">Dane zostaną tylko w tej przeglądarce. Na wspólnym komputerze zobaczy je każdy użytkownik.</p>
+      <div id="pamietaj-dane-migracja" class="ramka uwaga-ramka" hidden>
+        <p>Wcześniejsza wersja strony zapisała Twoje dane do faktur i dane klientów. Zdecyduj, czy mają zostać w tej przeglądarce.</p>
+        <div class="przyciski">
+          <button type="button" class="drugorzedny maly" id="migracja-zachowaj">Zachowaj moje dane</button>
+          <button type="button" class="niebezpieczny maly" id="migracja-usun">Usuń</button>
+        </div>
+      </div>
       <div class="przyciski">
         <button type="button" class="niebezpieczny" id="wyczysc">Wyczyść dane</button>
       </div>

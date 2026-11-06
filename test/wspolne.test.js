@@ -43,3 +43,24 @@ test('ogloszenieWyniku: procent, status i kwoty w jednym tekście', () => {
   const t = ogloszenieWyniku(statusLimitu(760000n, 1081350n), formatujZl, 'IV kwartał 2026');
   assert.match(t, /^70,3% limitu\. Wykorzystano co najmniej 70% limitu\. Do limitu .* zostało /);
 });
+
+// ---------------------------------------------------------------- termin wniosku do CEIDG w dzień wolny
+
+import { dopisekTerminu } from '../public/js/wspolne.js';
+import { najblizszyDzienRoboczy } from '../public/js/kalendarz.js';
+import { historiaKwartalow, normalizujWpis } from '../public/js/ewidencja-logika.js';
+
+test('termin CEIDG: D + 7 dni bez przesunięcia, dopisek o najbliższym dniu roboczym, gdy termin wypada w dzień wolny', () => {
+  // Przekroczenie w sobotę 2.01.2027: termin 9.01.2027 (sobota). 10.01 to niedziela, więc najbliższy dzień roboczy to 11.01.
+  const [kw] = historiaKwartalow([normalizujWpis({ id: 'a', data: '2027-01-02', kwota: '12000' })], '2027-01-05');
+  assert.deepEqual(kw.przekroczenie, { data: '2027-01-02', termin: '2027-01-09' }, 'termin bez przesunięcia');
+  assert.equal(najblizszyDzienRoboczy('2027-01-09'), '2027-01-11');
+  assert.equal(najblizszyDzienRoboczy('2027-01-05'), '2027-01-05', 'dzień roboczy bez zmian');
+  assert.equal(najblizszyDzienRoboczy('2027-01-06'), '2027-01-07', 'Trzech Króli');
+  assert.equal(dopisekTerminu(kw.przekroczenie.termin),
+    'Ten dzień jest wolny od pracy. Termin mógłby przesunąć się na 11.01.2027, ale przepisy tego nie przesądzają. Wniosek do CEIDG złożysz online także w dzień wolny, więc najbezpieczniej zrób to do 09.01.2027.');
+  assert.equal(dopisekTerminu('2027-01-08'), '', 'piątek: bez dopisku');
+  assert.match(dopisekTerminu('2026-12-24'), /przesunąć się na 28\.12\.2026/, 'Wigilia i święta');
+  // Dopisek nie zmienia statusu ani terminu.
+  assert.equal(kw.status.przekroczony, true);
+});

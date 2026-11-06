@@ -1,4 +1,5 @@
 import { BladDanych, naGrosze } from './logic.js';
+import { czyDzienRoboczy, najblizszyDzienRoboczy } from './kalendarz.js';
 
 // Teksty wyniku licznika i odczyt wpisu, bez zależności od DOM (testowane w node:test).
 // Informacja ogólna, bez wniosków indywidualnych.
@@ -59,4 +60,16 @@ export function odczytajWpis(wartosc) {
 /** Jedno zdanie dla czytnika ekranu: procent, status i kwoty. */
 export function ogloszenieWyniku(s, formatujZl, etykietaKwartalu) {
   return `${procentTekst(s.procent)} limitu. ${opisProgu(s)} ${szczegolyWyniku(s, formatujZl, etykietaKwartalu)}`;
+}
+
+const dataPl = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
+
+/**
+ * Dopisek do terminu wniosku do CEIDG (przekroczenie + 7 dni kalendarzowych), gdy termin wypada w sobotę, niedzielę
+ * albo święto. Termin się nie przesuwa: najbliższy dzień roboczy jest tylko w tym dopisku i nie zmienia statusu.
+ * Zwraca '' dla dnia roboczego.
+ */
+export function dopisekTerminu(termin) {
+  if (czyDzienRoboczy(termin)) return '';
+  return `Ten dzień jest wolny od pracy. Termin mógłby przesunąć się na ${dataPl(najblizszyDzienRoboczy(termin))}, ale przepisy tego nie przesądzają. Wniosek do CEIDG złożysz online także w dzień wolny, więc najbezpieczniej zrób to do ${dataPl(termin)}.`;
 }

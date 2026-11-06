@@ -52,6 +52,10 @@ export function limitLubNull(rok) {
 /**
  * Normalizuje wpis. Rzuca BladDanych z komunikatem dla użytkownika.
  * Wpis: { id, data, opis, kwota, waluta, kurs, kursData, kursTabela } (kwoty jako tekst z kropką).
+ * Pola nieobowiązkowe (są w wyniku tylko wtedy, gdy mają wartość):
+ * - dotyczy: przy zwrocie (kwota ujemna) data sprzedaży, której zwrot dotyczy. Służy tylko do ostrzeżenia
+ *   (ostrzezeniaZwrotow) i niczego nie przelicza: zwrot liczy się w kwartale swojej daty, czyli daty dokumentu korekty;
+ * - zmieniono: chwila ostatniej zmiany wpisu w formularzu (ISO 8601, UTC), do łączenia wersji (polaczWpisy).
  */
 export function normalizujWpis(w) {
   const data = String(w?.data ?? '').trim();
@@ -69,7 +73,15 @@ export function normalizujWpis(w) {
   }
   const kursData = waluta !== 'PLN' && kurs && poprawnaData(w?.kursData) ? w.kursData : '';
   const kursTabela = kursData ? String(w?.kursTabela ?? '').slice(0, 40) : '';
-  return { id: String(w?.id ?? ''), data, opis, kwota, waluta, kurs, kursData, kursTabela };
+  const wynik = { id: String(w?.id ?? ''), data, opis, kwota, waluta, kurs, kursData, kursTabela };
+  const dotyczy = String(w?.dotyczy ?? '').trim();
+  if (kwota.startsWith('-') && dotyczy) {
+    if (!poprawnaData(dotyczy)) throw new BladDanych('Podaj poprawną datę sprzedaży, której dotyczy zwrot.');
+    if (dotyczy > data) throw new BladDanych('Sprzedaż, której dotyczy zwrot, nie może być późniejsza niż data zwrotu.');
+    wynik.dotyczy = dotyczy;
+  }
+  if (typeof w?.zmieniono === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(w.zmieniono)) wynik.zmieniono = w.zmieniono;
+  return wynik;
 }
 
 /** Tekst liczby w formacie pliku ("1234.5"): przyjmuje "1 234,50", "1.234,50", "1,234.50", liczby JS. */
@@ -166,6 +178,16 @@ function osiagniety(sumaGr, limitGr, prog) {
   return sumaGr * 10n ** BigInt(s) >= limitGr * v;
 }
 
+/**
+ * Status kwartału z uwzględnieniem faktu przekroczenia. Przekroczenie się nie cofa (art. 5 ust. 3 ustawy Prawo
+ * przedsiębiorców: działalność staje się gospodarczą od dnia przekroczenia): gdy suma narastająco przekroczyła limit
+ * dnia D, kwartał do końca ma stan „przekroczony od D”, także gdy późniejsze zwroty obniżą sumę poniżej limitu.
+ */
+export function statusKwartalu(sumaGr, limitGr, przekroczenie = null) {
+  const s = statusLimitu(sumaGr, limitGr);
+  return przekroczenie ? { ...s, przekroczony: true, przekroczonyOd: przekroczenie.data } : s;
+}
+
 /** Kwota progu w groszach (np. 70% limitu), zaokrąglona połówkowo. */
 export function kwotaProgu(limitGr, prog) {
   const { v, s } = parsujDziesietna(prog);
@@ -175,7 +197,11 @@ export function kwotaProgu(limitGr, prog) {
 /**
  * Historia kwartałów: wszystkie kwartały z wpisami, od najnowszego.
  * [{ rok, q, klucz, sumaGr, liczba, bezKursu, zaplanowaneGr, zaplanowane, limitGr, status, przekroczenie: { data, termin } | null,
- *    statusZPlanem, wolneGr, prognozaPrzekroczenia: { data, termin, prognoza: true } | null }]
+ *    statusZPlanem, wolneGr, prognozaPrzekroczenia: { data, termin, prognoza: true } | null, przyszly, ostrzezenia }]
+ * Status po przekroczeniu zostaje „przekroczony” (statusKwartalu), nawet gdy zwroty obniżą sumę poniżej limitu.
+ * przyszly: kwartał zaczyna się po dziś (cała jego sprzedaż jest zaplanowana). ostrzezenia: ostrzeżenia o zwrotach
+ * z datą w tym kwartale (ostrzezeniaZwrotow). Suma kwartału może być ujemna (same zwroty), ale procent nie spada poniżej 0,
+ * a nadwyżka zwrotów nie przechodzi do innych kwartałów.
  * dzis (opcjonalnie): sprzedaż z późniejszą datą nie wchodzi do sumy, stanu ani daty przekroczenia,
  * tylko do zaplanowaneGr i zaplanowane (liczba wpisów). Bez dzis liczy wszystkie wpisy, jak arkusz.
  * Z planem (prognoza): statusZPlanem (sprzedaż do dziś i zaplanowana), wolneGr (limit minus jedno i drugie, co najmniej 0)
@@ -195,17 +221,18 @@ export function historiaKwartalow(wpisy, dzis = null) {
       if (gr !== null) g.zaplanowaneGr += gr;
     } else if (gr === null) g.bezKursu += 1; else g.sumaGr += gr;
   }
+  const ostrzezenia = ostrzezeniaZwrotow(wpisy, dzis);
   return [...grupy.values()]
     .sort((a, b) => (b.rok - a.rok) || (b.q - a.q))
     .map((g) => {
       const limitGr = limitLubNull(g.rok);
-      const status = limitGr === null ? null : statusLimitu(g.sumaGr, limitGr);
       let przekroczenie = null;
       if (limitGr !== null) {
         const data = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, g.rok, g.q, dzis), limitGr, 'przekroczenie');
         if (data) przekroczenie = { data, termin: dodajDni(data, DNI_NA_WNIOSEK_CEIDG) };
       }
-      const statusZPlanem = limitGr === null ? null : statusLimitu(g.sumaGr + g.zaplanowaneGr, limitGr);
+      const status = limitGr === null ? null : statusKwartalu(g.sumaGr, limitGr, przekroczenie);
+      const statusZPlanem = limitGr === null ? null : statusKwartalu(g.sumaGr + g.zaplanowaneGr, limitGr, przekroczenie);
       const wolne = limitGr === null ? null : limitGr - g.sumaGr - g.zaplanowaneGr;
       const wolneGr = wolne === null ? null : (wolne > 0n ? wolne : 0n);
       let prognozaPrzekroczenia = null;
@@ -213,8 +240,52 @@ export function historiaKwartalow(wpisy, dzis = null) {
         const data = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, g.rok, g.q), limitGr, 'przekroczenie');
         if (data) prognozaPrzekroczenia = { data, termin: dodajDni(data, DNI_NA_WNIOSEK_CEIDG), prognoza: true };
       }
-      return { ...g, limitGr, status, przekroczenie, statusZPlanem, wolneGr, prognozaPrzekroczenia };
+      const przyszly = Boolean(dzis) && granicaKwartalu(g.rok, g.q).od > dzis;
+      return {
+        ...g, limitGr, status, przekroczenie, statusZPlanem, wolneGr, prognozaPrzekroczenia, przyszly,
+        ostrzezenia: ostrzezenia.filter((o) => o.rok === g.rok && o.q === g.q),
+      };
     });
+}
+
+// ------------------------------------------------------------ zwroty
+
+/**
+ * Ostrzeżenia o zwrotach, przy których wynik zależy od wyboru kwartału. Zwrot liczymy w kwartale jego daty (daty dokumentu
+ * korekty, por. art. 14 ust. 1m ustawy o PIT), ale przepisy o limicie tego nie rozstrzygają. Ostrzegamy, gdy:
+ * - bez tego zwrotu limit jego kwartału byłby przekroczony (albo przekroczony wcześniej), przyczyna 'limit';
+ * - zwrot oznaczono jako dotyczący sprzedaży z wcześniejszego kwartału (pole dotyczy), przyczyna 'inny-kwartal'.
+ * Niczego nie przeliczamy wstecz. dzis (opcjonalnie): zwroty z późniejszą datą (zaplanowane) pomijamy.
+ * [{ id, data, rok, q, przyczyna, bezZwrotuPrzekroczenie: 'RRRR-MM-DD' | null, dotyczy: 'RRRR-MM-DD' | '' }]
+ */
+export function ostrzezeniaZwrotow(wpisy, dzis = null) {
+  const wynik = [];
+  for (const z of wpisy) {
+    const gr = kwotaPlnGr(z);
+    if (gr === null || gr >= 0n || (dzis && z.data > dzis)) continue;
+    const { rok, q } = kwartal(z.data);
+    const limitGr = limitLubNull(rok);
+    let bezZwrotuPrzekroczenie = null;
+    if (limitGr !== null) {
+      const zNim = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, rok, q, dzis), limitGr, 'przekroczenie');
+      const bezNiego = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy.filter((x) => x !== z), rok, q, dzis), limitGr, 'przekroczenie');
+      if (bezNiego && (!zNim || bezNiego < zNim)) bezZwrotuPrzekroczenie = bezNiego;
+    }
+    const dotyczy = z.dotyczy && poprawnaData(z.dotyczy) ? z.dotyczy : '';
+    const kwDotyczy = dotyczy ? kwartal(dotyczy) : null;
+    const innyKwartal = Boolean(kwDotyczy) && (kwDotyczy.rok < rok || (kwDotyczy.rok === rok && kwDotyczy.q < q));
+    if (!innyKwartal && !bezZwrotuPrzekroczenie) continue;
+    wynik.push({ id: z.id, data: z.data, rok, q, przyczyna: innyKwartal ? 'inny-kwartal' : 'limit', bezZwrotuPrzekroczenie, dotyczy });
+  }
+  return wynik;
+}
+
+const dataPl = (d) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
+
+/** Treść ostrzeżenia o zwrocie (ostrzezeniaZwrotow). Zdanie o limicie tylko wtedy, gdy bez zwrotu byłby przekroczony. */
+export function opisOstrzezeniaZwrotu(o) {
+  const limit = o.bezZwrotuPrzekroczenie ? ` Bez niego limit byłby przekroczony dnia ${dataPl(o.bezZwrotuPrzekroczenie)}.` : '';
+  return `Przepisy nie rozstrzygają, do którego kwartału należy ten zwrot.${limit} Skonsultuj to z doradcą podatkowym.`;
 }
 
 // ------------------------------------------------------------ prognoza
@@ -274,7 +345,9 @@ export function prognoza(wpisy, dzis) {
   });
   // Sama sprzedaż do dziś i zaplanowana (bez tempa): kiedy przekroczy limit i ile zostaje po niej.
   const dzienPlanu = zaplanowane.length ? dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, rok, q), limitGr, 'przekroczenie') : null;
-  const planPrzekroczenie = !progi.find((p) => p.prog === 'przekroczenie').osiagnietyDnia && dzienPlanu
+  const fakt = progi.find((p) => p.prog === 'przekroczenie').osiagnietyDnia;
+  const faktPrzekroczenia = fakt ? { data: fakt } : null;
+  const planPrzekroczenie = !fakt && dzienPlanu
     ? { data: dzienPlanu, termin: dodajDni(dzienPlanu, DNI_NA_WNIOSEK_CEIDG), prognoza: true } : null;
   const wolne = zapasGr - zaplanowaneGr;
   const wolneGr = wolne > 0n ? wolne : 0n;
@@ -284,10 +357,11 @@ export function prognoza(wpisy, dzis) {
   const wynik = {
     rok, q, od, doDnia, limitGr, sumaGr, zapasGr, wolneGr, dniMinelo, dniZostalo, liczbaWpisow, bezKursu,
     zaplanowaneGr, liczbaZaplanowanych: zaplanowane.length, planPrzekroczenie,
-    status: statusLimitu(sumaGr, limitGr),
+    // Po przekroczeniu stan zostaje „przekroczony”, także gdy zwroty obniżą sumę (statusKwartalu).
+    status: statusKwartalu(sumaGr, limitGr, faktPrzekroczenia),
     tempoDzienneGr: dzielZaokr(tempo, D),
     sumaNaKoniecGr,
-    statusNaKoniec: statusLimitu(sumaNaKoniecGr, limitGr),
+    statusNaKoniec: statusKwartalu(sumaNaKoniecGr, limitGr, faktPrzekroczenia),
     // Ile średnio dziennie można jeszcze sprzedać, żeby zmieścić się w limicie razem ze sprzedażą zaplanowaną.
     budzetDziennyGr: wolneGr / BigInt(dniZostalo + 1),
     progi,
@@ -295,6 +369,7 @@ export function prognoza(wpisy, dzis) {
       ? { data: przekr.osiagnietyDnia, termin: dodajDni(przekr.osiagnietyDnia, DNI_NA_WNIOSEK_CEIDG), prognoza: false }
       : (przekr.prognozaDnia ? { data: przekr.prognozaDnia, termin: dodajDni(przekr.prognozaDnia, DNI_NA_WNIOSEK_CEIDG), prognoza: true } : null),
     pewnosc: dniMinelo < 14 || liczbaWpisow < 3 ? 'mala' : 'zwykla',
+    ostrzezenia: ostrzezeniaZwrotow(wpisy, dzis).filter((o) => o.rok === rok && o.q === q),
   };
   // Przyczyna prognozowanego przekroczenia: sama zaplanowana sprzedaż ('plan') albo obecne tempo ('tempo').
   if (wynik.przekroczenie?.prognoza) {
@@ -306,10 +381,17 @@ export function prognoza(wpisy, dzis) {
 /**
  * Wpisy z pamięci przeglądarki połączone z wpisami, które były tylko na stronie (np. przy wyłączonej pamięci):
  * najpierw zapisane, potem lokalne o innym id. Żaden wpis nie znika i żaden się nie dubluje.
+ * Ten sam id w obu listach: wygrywa wersja zmieniona później (pole zmieniono). Gdy znaczników brak albo są równe,
+ * zostaje wersja z pamięci przeglądarki.
  */
 export function polaczWpisy(zapisane, lokalne) {
+  const lokalnePoId = new Map(lokalne.map((w) => [w.id, w]));
   const ids = new Set(zapisane.map((w) => w.id));
-  return [...zapisane, ...lokalne.filter((w) => !ids.has(w.id))];
+  const wybierz = (z) => {
+    const l = lokalnePoId.get(z.id);
+    return l && (l.zmieniono ?? '') > (z.zmieniono ?? '') ? l : z;
+  };
+  return [...zapisane.map(wybierz), ...lokalne.filter((w) => !ids.has(w.id))];
 }
 
 // ------------------------------------------------------------ arkusz i wydruk

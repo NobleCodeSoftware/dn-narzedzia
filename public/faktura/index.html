@@ -127,6 +127,15 @@
             <p id="numer-info" class="podpowiedz"></p>
           </div>
         </div>
+        <fieldset class="grupa" id="zaplaty-grupa">
+          <legend>Kiedy klient zapłacił <span class="opcjonalne">(nieobowiązkowe)</span></legend>
+          <!-- Pierwsza wpłata jest w HTML, w tym samym układzie co wiersz renderowany przez skrypt. -->
+          <ol id="zaplaty" class="zaplaty">
+            <li class="zaplata"><div class="pole"><label for="zaplata-0">Data wpłaty</label><input id="zaplata-0" type="date" min="2020-01-01" max="2035-12-31" aria-describedby="zaplaty-info"></div></li>
+          </ol>
+          <button type="button" id="dodaj-zaplate" class="drugorzedny maly">Dodaj kolejną wpłatę</button>
+          <p id="zaplaty-info" class="podpowiedz">Jeśli klient zapłacił później niż w miesiącu sprzedaży, podaj datę zapłaty, bo termin na żądanie może być dłuższy.</p>
+        </fieldset>
         <div class="pole">
           <label for="f-data-zadania">Kiedy klient poprosił o fakturę <span class="opcjonalne">(nieobowiązkowe)</span></label>
           <input id="f-data-zadania" type="date" min="2020-01-01" max="2035-12-31" aria-describedby="termin-info">
@@ -183,8 +192,10 @@
           <details class="metoda" id="inne-faktury">
             <summary>Faktury dla firm wystawione gdzie indziej</summary>
             <div class="pole">
-              <label for="f-inne">Suma innych faktur dla firm poza KSeF w miesiącu wystawienia <span class="opcjonalne">(zł)</span></label>
-              <input id="f-inne" inputmode="decimal" autocomplete="off" placeholder="np. 1200">
+              <label for="f-inne">Faktury dla firm wystawione w tym miesiącu gdzie indziej, w KSeF i poza nim <span class="opcjonalne">(zł)</span></label>
+              <input id="f-inne" inputmode="decimal" autocomplete="off" placeholder="np. 1200" aria-describedby="inne-zakres inne-info">
+              <p id="inne-zakres" class="podpowiedz">Bez faktur z kasy fiskalnej i bez faktur dla osób prywatnych.</p>
+              <p id="inne-info" class="podpowiedz">Przepis mówi o fakturach wystawionych poza KSeF. Liczymy też faktury z KSeF, żeby nie zaniżyć sumy.</p>
             </div>
             <div class="przelacznik">
               <input type="checkbox" id="f-przekroczony">
@@ -214,9 +225,22 @@
       <ol id="lista-faktur" class="wpisy"></ol>
       <div class="przelacznik">
         <input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">
-        <label for="pamietaj">Pamiętaj wpisy w tej przeglądarce</label>
+        <label for="pamietaj">Pamiętaj wpisy ewidencji</label>
       </div>
-      <p id="pamietaj-info" class="podpowiedz">To samo ustawienie co w ewidencji: obejmuje też faktury i dane klientów. Usunąć wszystko możesz przyciskiem „Wyczyść dane” w <a href="/#pliki">ewidencji</a>.</p>
+      <p id="pamietaj-info" class="podpowiedz">To samo ustawienie co w ewidencji: obejmuje też wystawione faktury, ale bez danych osobowych (numer, daty, kwota, rodzaj klienta), chyba że włączysz opcję niżej. Usunąć wszystko możesz przyciskiem „Wyczyść dane” w <a href="/#pliki">ewidencji</a>.</p>
+      <div class="przelacznik">
+        <input type="checkbox" id="pamietaj-dane" aria-describedby="pamietaj-dane-zakres pamietaj-dane-info">
+        <label for="pamietaj-dane">Zapamiętaj moje dane i dane klientów do faktur</label>
+      </div>
+      <p id="pamietaj-dane-zakres" class="podpowiedz">Obejmuje też pełne faktury do ponownego wydruku z listy i imię do wydruku ewidencji.</p>
+      <p id="pamietaj-dane-info" class="podpowiedz">Dane zostaną tylko w tej przeglądarce. Na wspólnym komputerze zobaczy je każdy użytkownik.</p>
+      <div id="pamietaj-dane-migracja" class="ramka uwaga-ramka" hidden>
+        <p>Wcześniejsza wersja strony zapisała Twoje dane do faktur i dane klientów. Zdecyduj, czy mają zostać w tej przeglądarce.</p>
+        <div class="przyciski">
+          <button type="button" class="drugorzedny maly" id="migracja-zachowaj">Zachowaj moje dane</button>
+          <button type="button" class="niebezpieczny maly" id="migracja-usun">Usuń</button>
+        </div>
+      </div>
     </section>
 
     <section id="zasady" aria-labelledby="zasady-tytul">
@@ -230,8 +254,9 @@
         <dt>Firma, od 1 stycznia 2027</dt>
         <dd>Każdą fakturę wystawiasz w KSeF, więc ta strona jej nie przygotuje.</dd>
       </dl>
-      <p>Fakturę wystawiasz do 15. dnia miesiąca po sprzedaży, a gdy prośba przyszła później, do 15 dni od prośby. Faktura bez VAT nie ma stawki ani kwoty podatku, ale musi mieć podstawę zwolnienia.</p>
-      <p class="zrodla">Źródła (sprawdzone 22.10.2026): <a href="https://api.sejm.gov.pl/eli/acts/DU/2026/1263/text.pdf" rel="noopener noreferrer">ustawa o VAT, Dz.U. 2026 poz. 1263</a> (art. 106b, 106e, 106ga, 106i, 113, 145m),
+      <p>Fakturę wystawiasz do 15. dnia miesiąca po sprzedaży, a gdy prośba przyszła później, do 15 dni od prośby. Gdy klient zapłacił później niż w miesiącu sprzedaży, poprosić może do 3 miesięcy od końca miesiąca zapłaty.</p>
+      <p>Faktura bez VAT nie ma stawki ani kwoty podatku, ale musi mieć podstawę zwolnienia.</p>
+      <p class="zrodla">Źródła (sprawdzone 22.10.2026, ustawa o VAT ponownie 05.11.2026): <a href="https://api.sejm.gov.pl/eli/acts/DU/2026/1263/text.pdf" rel="noopener noreferrer">ustawa o VAT, Dz.U. 2026 poz. 1263</a> (art. 106b, 106e, 106ga, 106i, 113, 145m),
         <a href="https://ksef.podatki.gov.pl/ponizej-10-000-zl/" rel="noopener noreferrer">ksef.podatki.gov.pl: Poniżej 10 000 zł</a>,
         <a href="https://ksef.podatki.gov.pl/konsumenci-i-osoby-fizyczne/" rel="noopener noreferrer">ksef.podatki.gov.pl: Konsumenci</a>,
         <a href="https://api.sejm.gov.pl/eli/acts/DU/2026/151/text.pdf" rel="noopener noreferrer">ustawa o zasadach ewidencji i identyfikacji podatników, Dz.U. 2026 poz. 151</a> (art. 3),

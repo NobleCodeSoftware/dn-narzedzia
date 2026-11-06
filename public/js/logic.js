@@ -109,7 +109,7 @@ export function limitDlaRoku(rok, placaMinimalna) {
   return limitKwartalny(placa);
 }
 
-/** Status limitu z progami 70/85/95/100%. */
+/** Status limitu z progami 70/85/95/100%. Procent nie spada poniżej 0 (np. kwartał z samymi zwrotami). */
 export function statusLimitu(przychodGr, limitGr, progi = PROGI) {
   if (limitGr <= 0n) throw new BladDanych('limit musi być większy od zera');
   const promile = dzielZaokr(przychodGr * 1000n, limitGr); // procent z jednym miejscem po przecinku
@@ -121,7 +121,7 @@ export function statusLimitu(przychodGr, limitGr, progi = PROGI) {
     przychodGr,
     limitGr,
     pozostaloGr: limitGr - przychodGr,
-    procent: Number(promile) / 10,
+    procent: promile > 0n ? Number(promile) / 10 : 0,
     prog: przekroczone.length ? przekroczone[przekroczone.length - 1] : null,
     przekroczony: przychodGr > limitGr,
   };

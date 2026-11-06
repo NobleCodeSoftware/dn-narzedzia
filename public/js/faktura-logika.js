@@ -1,13 +1,13 @@
 // Faktura bez VAT (zwolnienie) dla sprzedawcy zwolnionego z VAT, np. w działalności nierejestrowanej.
 // Czysty moduł ES bez DOM (testy: node:test). Kwoty liczymy w groszach na BigInt.
 //
-// Źródła (sprawdzone 22.10.2026 u źródła):
+// Źródła (sprawdzone 22.10.2026 u źródła; art. 106b ust. 3, 106i ust. 1, 2, 6 i 7 oraz 145m ponownie 05.11.2026):
 // - ustawa o VAT, t.j. Dz.U. 2026 poz. 1263 (api.sejm.gov.pl, ELI DU/2026/1263):
 //   art. 106b ust. 2 i ust. 3 pkt 2 (zwolniony z art. 113 wystawia fakturę na żądanie nabywcy zgłoszone w ciągu 3 miesięcy
 //   od końca miesiąca sprzedaży), art. 106e ust. 1 (elementy faktury), ust. 1 pkt 19 (podstawa zwolnienia),
 //   ust. 4 pkt 3 (bez stawki, sumy według stawek i kwoty podatku), ust. 11 (zaokrąglenie do grosza),
 //   art. 106ga ust. 1 i ust. 2 pkt 4 (KSeF; poza obowiązkiem faktury dla osób fizycznych nieprowadzących działalności),
-//   art. 106i ust. 1, 6 i 7 (terminy), art. 113 ust. 1 i 9 (zwolnienie podmiotowe),
+//   art. 106i ust. 1, 2, 6 i 7 (terminy, także po zapłacie i zaliczce), art. 113 ust. 1 i 9 (zwolnienie podmiotowe),
 //   art. 145l (do 31.03.2026 poza KSeF), art. 145m (od 1.04 do 31.12.2026 poza KSeF, gdy faktury wystawione w miesiącu
 //   ≤ 10 000 zł brutto; prawo traci się od faktury, którą przekroczono kwotę);
 // - ksef.podatki.gov.pl „Poniżej 10 000 zł” (FAQ, zmodyfikowano 20.11.2025): do limitu tylko faktury, które obowiązkowo
@@ -26,6 +26,7 @@ export const LIMIT_POZA_KSEF_GR = 1_000_000n; // 10 000,00 zł brutto w miesiąc
 export const KSEF_LIMIT_OD = '2026-04-01'; // wcześniej poza KSeF bez limitu (art. 145l)
 export const KSEF_LIMIT_DO = '2026-12-31'; // ostatni dzień wyjątku z art. 145m
 export const MAX_POZYCJI = 10;
+export const MAX_ZAPLAT = 5;
 export const MAX_KWOTA_GR = 99_999_999_999n; // 999 999 999,99 zł
 const USTAWA = 'ustawy z dnia 11 marca 2004 r. o podatku od towarów i usług';
 export const PODSTAWY = {
@@ -211,29 +212,59 @@ export function slownie(gr) {
 
 // ------------------------------------------------------------ terminy
 
+/** Pietnasty dzień miesiąca po miesiącu daty 'RRRR-MM-DD'. */
+const pietnastyPo = (data) => dodajDni(koniecMiesiaca(data), 15);
+
+/** Poprawne daty wpłat: bez powtórzeń, rosnąco, najwyżej MAX_ZAPLAT. */
+export function normalizujZaplaty(zaplaty) {
+  const lista = (Array.isArray(zaplaty) ? zaplaty : []).map((d) => String(d ?? '').trim()).filter(poprawnaData);
+  return [...new Set(lista)].sort().slice(0, MAX_ZAPLAT);
+}
+
 /**
  * Terminy z ustawy o VAT dla faktury na żądanie (sprzedaż zwolniona z art. 113):
- * - żądanie w ciągu 3 miesięcy od końca miesiąca sprzedaży (art. 106b ust. 3);
- * - wystawienie do 15. dnia następnego miesiąca, gdy żądanie przyszło w miesiącu sprzedaży, a później do 15. dnia
- *   od żądania (art. 106i ust. 6);
+ * - żądanie w ciągu 3 miesięcy od końca miesiąca, w którym dokonano dostawy „bądź otrzymano całość lub część zapłaty”
+ *   (art. 106b ust. 3 pkt 2): okno liczymy od miesiąca dostawy i od miesiąca każdej wpłaty (także zaliczki), a żądanie
+ *   jest w terminie, gdy mieści się w którymkolwiek oknie; zadanieDo to koniec najpóźniejszego okna;
+ * - termin wystawienia (art. 106i ust. 1, 2 i 6), pierwsza pasująca reguła:
+ *   a) zaliczka przed dostawą i żądanie do końca miesiąca zaliczki: 15. dzień miesiąca po miesiącu zaliczki;
+ *   a′) żądanie do końca miesiąca dostawy: 15. dzień miesiąca po miesiącu dostawy;
+ *   b) żądanie po miesiącu dostawy, ale do końca miesiąca wpłaty po dostawie: przepisy tego nie rozstrzygają, więc
+ *      termin to późniejsza z dat (15. dzień miesiąca po dostawie albo dzień żądania) i terminNiejasny: true;
+ *   c) w pozostałych przypadkach: 15 dni od żądania;
  * - nie wcześniej niż 60 dni przed sprzedażą (art. 106i ust. 7).
- * Zwraca { zadanieDo, termin, przepis, poTerminieZadania } (termin null, gdy nie ma daty żądania po miesiącu sprzedaży).
+ * Bez daty żądania termin jak przy żądaniu w miesiącu dostawy.
+ * Zwraca { zadanieDo, termin, przepis, poTerminieZadania, terminNiejasny, najwczesniej, zaplaty }.
  */
-export function terminy(dataSprzedazy, dataZadania = '') {
+export function terminy(dataSprzedazy, dataZadania = '', zaplaty = []) {
   if (!poprawnaData(dataSprzedazy)) throw new BladDanych('Podaj datę sprzedaży.');
+  const wplaty = normalizujZaplaty(zaplaty);
   const koniec = koniecMiesiaca(dataSprzedazy);
-  const zadanieDo = koniecMiesiacaPo(dataSprzedazy, 3);
-  const pietnastyNastepnego = dodajDni(koniec, 15);
-  if (!poprawnaData(dataZadania) || dataZadania <= koniec) {
-    return { zadanieDo, termin: pietnastyNastepnego, przepis: 'art. 106i ust. 6 pkt 1', poTerminieZadania: false, najwczesniej: dodajDni(dataSprzedazy, -60) };
+  const okna = [dataSprzedazy, ...wplaty].map((d) => koniecMiesiacaPo(d, 3));
+  const zadanieDo = okna.sort().at(-1);
+  const baza = { zadanieDo, poTerminieZadania: false, terminNiejasny: false, najwczesniej: dodajDni(dataSprzedazy, -60), zaplaty: wplaty };
+  if (!poprawnaData(dataZadania)) return { ...baza, termin: pietnastyPo(dataSprzedazy), przepis: 'art. 106i ust. 6 pkt 1' };
+  const poTerminieZadania = !okna.some((k) => dataZadania <= k);
+  const zaliczka = wplaty.find((d) => d < dataSprzedazy && dataZadania <= koniecMiesiaca(d));
+  if (zaliczka) return { ...baza, termin: pietnastyPo(zaliczka), przepis: 'art. 106i ust. 2 i ust. 6 pkt 1' };
+  if (dataZadania <= koniec) return { ...baza, termin: pietnastyPo(dataSprzedazy), przepis: 'art. 106i ust. 6 pkt 1' };
+  if (!poTerminieZadania && wplaty.some((d) => d > dataSprzedazy && dataZadania <= koniecMiesiaca(d))) {
+    const pietnasty = pietnastyPo(dataSprzedazy);
+    return { ...baza, termin: dataZadania > pietnasty ? dataZadania : pietnasty, przepis: 'art. 106i ust. 6', terminNiejasny: true };
   }
-  return {
-    zadanieDo,
-    termin: dodajDni(dataZadania, 15),
-    przepis: 'art. 106i ust. 6 pkt 2',
-    poTerminieZadania: dataZadania > zadanieDo,
-    najwczesniej: dodajDni(dataSprzedazy, -60),
-  };
+  return { ...baza, termin: dodajDni(dataZadania, 15), przepis: 'art. 106i ust. 6 pkt 2', poTerminieZadania };
+}
+
+export const PODPOWIEDZ_ZAPLATY = 'Jeśli klient zapłacił później niż w miesiącu sprzedaży, podaj datę zapłaty, bo termin na żądanie może być dłuższy.';
+
+/** Tekst o terminie wystawienia dla wyniku terminy() (formularz faktury). */
+export function opisTerminu(t, { zadanie = '' } = {}) {
+  if (t.poTerminieZadania) {
+    return `Prośba przyszła po ${dataPl(t.zadanieDo)}, czyli po 3 miesiącach od końca miesiąca sprzedaży albo zapłaty (art. 106b ust. 3 pkt 2).`;
+  }
+  if (t.terminNiejasny) return `Przepisy nie rozstrzygają terminu w tej sytuacji. Wystaw fakturę niezwłocznie, najpóźniej ${dataPl(t.termin)}.`;
+  const tekst = `Termin wystawienia: do ${dataPl(t.termin)} (${t.przepis} ustawy o VAT).`;
+  return zadanie ? tekst : `${tekst} Klient może poprosić do ${dataPl(t.zadanieDo)}.`;
 }
 
 // ------------------------------------------------------------ faktura
@@ -241,7 +272,7 @@ export function terminy(dataSprzedazy, dataZadania = '') {
 /**
  * Normalizuje i sprawdza fakturę. Rzuca BladPola z nazwą pola dla użytkownika.
  * Wejście (wartości z formularza jako tekst):
- * { numer, dataWystawienia, dataSprzedazy, dataZadania, sprzedawca: { nazwa, adres, nip },
+ * { numer, dataWystawienia, dataSprzedazy, dataZadania, zaplaty: ['RRRR-MM-DD', …], sprzedawca: { nazwa, adres, nip },
  *   nabywca: { rodzaj: 'firma'|'konsument', nazwa, adres, nip }, pozycje: [{ nazwa, ilosc, jm, cena }],
  *   podstawa: { kod, tekst }, platnosc }
  * Wynik: te same pola po normalizacji, a pozycje z { wartosc } i faktura z { suma } (tekst „1234.50”).
@@ -258,6 +289,7 @@ export function normalizujFakture(f, { dzis = '' } = {}) {
     throw new BladPola('dataWystawienia', 'Faktury nie wystawia się wcześniej niż 60 dni przed sprzedażą (art. 106i ust. 7 ustawy o VAT).');
   }
   const dataZadania = poprawnaData(String(f?.dataZadania ?? '').trim()) ? String(f.dataZadania).trim() : '';
+  const zaplaty = normalizujZaplaty(f?.zaplaty);
 
   const rok = Number(dataWystawienia.slice(0, 4));
   const numer = String(f?.numer ?? '').replace(/\s+/g, '');
@@ -324,7 +356,7 @@ export function normalizujFakture(f, { dzis = '' } = {}) {
   if (!podstawaTekst) throw new BladPola('podstawaTekst', 'Wpisz podstawę prawną zwolnienia, np. art. 43 ust. 1 pkt … ustawy o VAT.');
 
   return {
-    numer, dataWystawienia, dataSprzedazy, dataZadania, sprzedawca, nabywca, pozycje,
+    numer, dataWystawienia, dataSprzedazy, dataZadania, zaplaty, sprzedawca, nabywca, pozycje,
     podstawa: { kod, tekst: podstawaTekst }, platnosc: tekst(f?.platnosc, 200), suma: groszeNaTekst(sumaGr),
   };
 }
@@ -350,6 +382,17 @@ export function lukaWNumeracji(faktury, numer) {
   const oczekiwany = kolejnyNumer(faktury.map((f) => f.numer), Number(m[2]));
   return Number(m[1]) > Number(oczekiwany.split('/')[0]) ? oczekiwany : null;
 }
+
+/**
+ * Faktury z pamięci przeglądarki z identyfikatorem. Faktury zapisane przez wcześniejsze wersje strony nie mają pola id:
+ * dostają identyfikator wyliczony z numeru, daty i miejsca na liście, więc w każdej karcie ten sam.
+ */
+export function nadajIdFakturom(faktury) {
+  return faktury.map((f, i) => (typeof f.id === 'string' && f.id ? f : { ...f, id: `z${i}-${f.numer}-${f.dataWystawienia}` }));
+}
+
+/** Lista bez jednej faktury, wskazanej identyfikatorem (dwie faktury z tym samym numerem nie znikają razem). */
+export const bezFaktury = (faktury, id) => faktury.filter((f) => f.id !== id);
 
 /** Usunąć można tylko ostatnią fakturę roku, żeby numeracja została ciągła. */
 export function moznaUsunac(faktury, numer) {
@@ -388,9 +431,12 @@ export function polaczUtrate(a, b) {
 
 /**
  * Czy fakturę można wystawić poza KSeF (tu, w PDF), czy trzeba w KSeF.
+ * Art. 145m ust. 1 mówi o fakturach wystawionych poza KSeF. Wariant ostrożny: do sumy miesiąca wliczamy wszystkie faktury
+ * dla firm, także wystawione w KSeF (użytkownik wpisuje je w inneGr), żeby nie zaniżyć sumy. Faktur dla osób prywatnych
+ * nie wliczamy. Faktury z tego narzędzia liczymy według rodzaju nabywcy.
  * Wejście: { dataWystawienia, dzis (dzisiejsza data w Warszawie; dla firmy reguła liczy się od niej, gdy data z formularza
  *   jest wcześniejsza), rodzaj, kwotaGr, faktury (zapisane), numer (tej faktury, pomijany w sumie),
- *   inneGr (faktury dla firm wystawione poza KSeF w tym miesiącu gdzie indziej), przekroczonoWczesniej (deklaracja użytkownika),
+ *   inneGr (faktury dla firm wystawione w tym miesiącu gdzie indziej, w KSeF i poza nim), przekroczonoWczesniej (deklaracja użytkownika),
  *   utrataOd ('RRRR-MM' zapamiętany miesiąc utraty prawa) }.
  * Wynik: { stan: 'poza-ksef' | 'blokada', powod, miesiac, wczesniejGr, poGr, zapasGr, limitGr }.
  * Powody: 'konsument' (B2C poza obowiązkiem KSeF), 'przed-limitem' (data przed 1.04.2026), 'w-limicie',
@@ -422,7 +468,7 @@ export function opisKsef(r) {
   switch (r.powod) {
     case 'konsument': return 'Faktura dla osoby prywatnej może być poza KSeF, także od 2027 r. Do limitu 10 000 zł się nie wlicza.';
     case 'przed-limitem': return 'Do 31.03.2026 faktury mogły być poza KSeF bez limitu kwoty.';
-    case 'w-limicie': return `Faktury dla firm poza KSeF ${wMiesiacu(r.miesiac)} z tą fakturą: ${formatujZl(r.poGr)} z ${limit}. Zostaje ${formatujZl(r.zapasGr)}.`;
+    case 'w-limicie': return `Faktury dla firm ${wMiesiacu(r.miesiac)} z tą fakturą: ${formatujZl(r.poGr)} z ${limit}. Zostaje ${formatujZl(r.zapasGr)}.`;
     case 'limit': return `Ta faktura przekracza limit: faktury dla firm ${wMiesiacu(r.miesiac)} dałyby ${formatujZl(r.poGr)}, a poza KSeF wolno do ${limit}. Tę i każdą kolejną fakturę dla firmy w 2026 r. wystawiasz w KSeF.`;
     case 'utrata': return 'Limit 10 000 zł poza KSeF został już w 2026 r. przekroczony. Od tamtej faktury każdą fakturę dla firmy wystawiasz w KSeF.';
     case 'ksef-2027': return 'Od 1.01.2027 każdą fakturę dla firmy wystawiasz w KSeF. Tutaj jej nie wystawisz.';
@@ -445,6 +491,11 @@ export function skrotKsef(r) {
 // ------------------------------------------------------------ teksty okien (akapity po najwyżej 2 zdania)
 
 const NBSP = '\u00a0';
+/** Etykieta, zakres i informacja przy polu „inne faktury” (inneGr). */
+export const ETYKIETA_INNYCH = 'Faktury dla firm wystawione w tym miesiącu gdzie indziej, w KSeF i poza nim';
+export const ZAKRES_INNYCH = 'Bez faktur z kasy fiskalnej i bez faktur dla osób prywatnych.';
+export const INFO_INNYCH = 'Przepis mówi o fakturach wystawionych poza KSeF. Liczymy też faktury z KSeF, żeby nie zaniżyć sumy.';
+
 export const KOMUNIKAT_PO_OKNIE_LIMITU = 'Sprawdź kwotę albo wystaw tę fakturę w KSeF.';
 export const TEKSTY_OKIEN = {
   /** Faktura przekracza limit 10 000 zł (art. 145m ust. 2). */

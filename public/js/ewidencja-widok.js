@@ -3,10 +3,11 @@
 // Bez wstawiania HTML z tekstu: elementy budujemy przez createElement i textContent.
 
 import { BladDanych, dataWarszawa, formatujZl, kwartal, statusLimitu } from './logic.js';
-import { procentTekst, opisProgu, klasaProgu } from './wspolne.js';
+import { procentTekst, opisProgu, klasaProgu, dopisekTerminu } from './wspolne.js';
 import {
   normalizujWpis, kwotaPlnGr, posortuj, historiaKwartalow, prognoza, wierszeEwidencji, etykietaKwartalu,
   kluczKwartalu, granicaKwartalu, limitLubNull, niejednoznacznaKwota, opisNiejednoznacznejKwoty, polaczWpisy,
+  ostrzezeniaZwrotow, opisOstrzezeniaZwrotu,
 } from './ewidencja-logika.js';
 import { pobierzKurs, pobierzKursyHurtem, WALUTY } from './nbp.js';
 import { eksportujCsv, importujCsv } from './csv.js';
@@ -25,6 +26,7 @@ const stan = {
   edytowany: null, // id wpisu w edycji
   filtr: null, // klucz kwartału, 'wszystkie' albo null (bieżący)
   pamietaj: true,
+  pamietajDane: false, // „Zapamiętaj moje dane i dane klientów do faktur” (dane zapisuje strona faktury)
   dostepna: true, // czy pamięć przeglądarki w ogóle działa
   zapisNieudany: false, // ostatni zapis w pamięci przeglądarki się nie udał (np. brak miejsca)
   zmianyOdZapisuPliku: false,
@@ -113,6 +115,7 @@ function ustawWpisy(wpisy, { zmiana = true } = {}) {
 function wczytajStart() {
   stan.dostepna = magazyn.dostepny();
   $('pamietaj').disabled = !stan.dostepna;
+  $('pamietaj-dane').disabled = !stan.dostepna;
   if (!stan.dostepna) $('pamietaj-info').textContent = 'Pamięć przeglądarki jest niedostępna (np. tryb prywatny), więc wpisy znikną po zamknięciu strony. Zapisz plik przed zamknięciem.';
   wczytajZMagazynu();
 }
@@ -122,6 +125,7 @@ function wczytajZMagazynu() {
   const u = magazyn.wczytajUstawienia();
   stan.pamietaj = stan.dostepna && u.pamietaj !== false;
   $('pamietaj').checked = stan.pamietaj;
+  odswiezPamiecDanych();
   if (u.osoba) $('druk-osoba').value = String(u.osoba).slice(0, 80);
   if (!stan.pamietaj) return;
   const zapisane = magazyn.wczytaj();
@@ -142,6 +146,21 @@ function poZmianieWInnejKarcie(ev) {
   if (!stan.pamietaj || stan.zapisNieudany || stan.przyklad) return;
   wczytajZMagazynu();
   odswiez();
+}
+
+/** Przełącznik „Zapamiętaj moje dane i dane klientów do faktur” i informacja o danych z wcześniejszej wersji. */
+function odswiezPamiecDanych() {
+  const d = magazyn.stanPamieciDanych();
+  stan.pamietajDane = stan.dostepna && d.wlaczona;
+  $('pamietaj-dane').checked = stan.pamietajDane;
+  // Dane z wcześniejszej wersji: jednorazowy wybór „Zachowaj moje dane” albo „Usuń”.
+  $('pamietaj-dane-migracja').hidden = !(stan.dostepna && d.czekaNaWybor);
+}
+
+/** Akapit z dopiskiem o terminie w dzień wolny od pracy (albo null, gdy termin to dzień roboczy). */
+function akapitDopisku(termin) {
+  const t = dopisekTerminu(termin);
+  return t ? el('p', { tekst: t }) : null;
 }
 
 /** Opis prognozowanego przekroczenia według przyczyny: zaplanowana sprzedaż albo obecne tempo. */
@@ -187,6 +206,7 @@ function renderujStan() {
   if (puste) return;
   if (!p) {
     $('stan-bez-kursu').hidden = true;
+    $('stan-zwroty').hidden = true;
     $('stan-status').textContent = 'Brak kwoty limitu na ten rok. Uzupełnimy ją po ogłoszeniu płacy minimalnej.';
     return;
   }
@@ -199,12 +219,14 @@ function renderujStan() {
   $('stan-pasek-prognoza').style.width = `${Math.min(Math.max(p.statusNaKoniec.procent, 0), 100)}%`;
   const grozi = Boolean(p.przekroczenie?.prognoza);
   const klasaStatusu = grozi ? klasaProgu(p.statusNaKoniec) : klasaProgu(s);
-  $('stan-status').textContent = grozi
-    ? `Uwaga: ${opisGrozby(p.przekroczenie, p.przyczynaPrzekroczenia)}.`
-    : opisProgu(s);
+  let status = grozi ? `Uwaga: ${opisGrozby(p.przekroczenie, p.przyczynaPrzekroczenia)}.` : opisProgu(s);
+  // Przekroczenie się nie cofa: późniejsze zwroty nie przywracają stanu „w limicie”.
+  if (!grozi && s.przekroczonyOd) status = `Limit przekroczony ${dataPl(s.przekroczonyOd)}.${p.zapasGr >= 0n ? ' Późniejsze zwroty tego nie cofają.' : ''}`;
+  $('stan-status').textContent = status;
   $('stan-status').className = `status ${klasaStatusu}`;
   $('stan-suma').textContent = formatujZl(p.sumaGr);
   if (p.zapasGr < 0n) $('stan-zapas').textContent = `limit przekroczony o ${formatujZl(-p.zapasGr)}`;
+  else if (s.przekroczonyOd) $('stan-zapas').textContent = `nic, limit przekroczony ${dataPl(s.przekroczonyOd)}`;
   else if (p.planPrzekroczenie) $('stan-zapas').textContent = `${formatujZl(p.zapasGr)}, ale zaplanowane sprzedaże go przekraczają`;
   else if (p.zaplanowaneGr !== 0n) $('stan-zapas').textContent = `${formatujZl(p.wolneGr)} po zaplanowanych sprzedażach`;
   else $('stan-zapas').textContent = formatujZl(p.zapasGr);
@@ -212,7 +234,9 @@ function renderujStan() {
   $('stan-koniec').textContent = p.tempoDzienneGr > 0n || p.zaplanowaneGr !== 0n
     ? `${formatujZl(p.sumaNaKoniecGr)} (${procentTekst(p.statusNaKoniec.procent)})${zaplanowane}`
     : 'brak sprzedaży do oceny';
-  $('stan-budzet').textContent = p.wolneGr > 0n ? formatujZl(p.budzetDziennyGr) : '—';
+  $('stan-budzet').textContent = p.wolneGr > 0n && !s.przekroczonyOd ? formatujZl(p.budzetDziennyGr) : '—';
+  $('stan-zwroty').hidden = p.ostrzezenia.length === 0;
+  $('stan-zwroty').textContent = p.ostrzezenia.map((o) => `Zwrot z ${dataPl(o.data)}: ${opisOstrzezeniaZwrotu(o)}`).join(' ');
 
   let zdanie;
   if (p.przekroczenie && !p.przekroczenie.prognoza) {
@@ -277,6 +301,7 @@ function opisKwoty(w) {
 
 function renderujListe() {
   opcjeFiltra();
+  const ostrzezenia = new Map(ostrzezeniaZwrotow(stan.wpisy, dzis()).map((o) => [o.id, o]));
   const filtr = $('filtr-kwartal').value;
   const widoczne = posortuj(stan.wpisy).filter((w) => {
     if (filtr === 'wszystkie') return true;
@@ -292,7 +317,9 @@ function renderujListe() {
         el('p', { klasa: 'wpis-data', tekst: dataPl(w.data) }),
         el('p', { klasa: 'wpis-opis', tekst: w.opis || 'Sprzedaż bez opisu' }),
         el('p', { klasa: `wpis-kwota${kwotaPlnGr(w) < 0n ? ' ujemna' : ''}`, tekst: k.glowna }),
-        k.dodatkowa ? el('p', { klasa: `wpis-dodatkowa${brak ? ' ostrzezenie-tekst' : ''}`, tekst: k.dodatkowa }) : null),
+        k.dodatkowa ? el('p', { klasa: `wpis-dodatkowa${brak ? ' ostrzezenie-tekst' : ''}`, tekst: k.dodatkowa }) : null,
+        w.dotyczy ? el('p', { klasa: 'wpis-dodatkowa', tekst: `Zwrot dotyczy sprzedaży z ${dataPl(w.dotyczy)}.` }) : null,
+        ostrzezenia.has(w.id) ? el('p', { klasa: 'wpis-dodatkowa ostrzezenie-tekst', tekst: opisOstrzezeniaZwrotu(ostrzezenia.get(w.id)) }) : null),
       el('div', { klasa: 'wpis-akcje' },
         el('button', { type: 'button', klasa: 'drugorzedny maly', tekst: 'Edytuj', 'aria-label': `Edytuj wpis z ${dataPl(w.data)}, ${k.glowna}`, onclick: () => edytuj(w.id) }),
         el('button', { type: 'button', klasa: 'drugorzedny maly', tekst: 'Usuń', 'aria-label': `Usuń wpis z ${dataPl(w.data)}, ${k.glowna}`, onclick: () => usun(w.id) })));
@@ -311,8 +338,10 @@ function renderujHistorie() {
   $('historia-pusto').hidden = h.length > 0;
   $('historia-tabela').hidden = h.length === 0;
   zastap($('historia-wiersze'), ...h.map((k) => {
-    const procent = k.status ? k.status.procent : null;
-    const pasek = el('div', { klasa: 'pasek maly', 'aria-hidden': 'true' }, el('div', { klasa: `pasek-wypelnienie ${k.status ? klasaProgu(k.status) : ''}` }));
+    // Kwartał, który jeszcze się nie zaczął: procent i pasek z planu, a nie „0,0%” sprzedaży do dziś.
+    const s = k.przyszly ? k.statusZPlanem : k.status;
+    const procent = s ? s.procent : null;
+    const pasek = el('div', { klasa: 'pasek maly', 'aria-hidden': 'true' }, el('div', { klasa: `pasek-wypelnienie ${s ? klasaProgu(s) : ''}` }));
     if (procent !== null) pasek.firstChild.style.width = `${Math.min(Math.max(procent, 0), 100)}%`;
     let opis;
     if (!k.status) opis = k.rok < 2026 ? 'limit kwartalny od 2026' : 'brak kwoty limitu na ten rok';
@@ -325,10 +354,11 @@ function renderujHistorie() {
     else if (!k.przekroczenie && k.prognozaPrzekroczenia) klasaStanu = klasaProgu(k.statusZPlanem);
     if (k.bezKursu) opis += ` · bez kursu: ${k.bezKursu}`;
     if (k.zaplanowane) opis += ` · zaplanowane: ${formatujZl(k.zaplanowaneGr)}`;
+    if (k.ostrzezenia.length) opis += ' · zwrot do sprawdzenia (zob. wpisy)';
     return el('tr', {},
       el('th', { scope: 'row', tekst: `${['I', 'II', 'III', 'IV'][k.q - 1]} ${k.rok}` }),
       el('td', { klasa: 'num', tekst: formatujZl(k.sumaGr) }),
-      el('td', { klasa: 'kol-pasek' }, el('span', { klasa: 'procent-maly', tekst: procent === null ? '—' : procentTekst(procent) }), procent === null ? null : pasek),
+      el('td', { klasa: 'kol-pasek' }, el('span', { klasa: 'procent-maly', tekst: procent === null ? '—' : `${procentTekst(procent)}${k.przyszly ? ' w planie' : ''}` }), procent === null ? null : pasek),
       el('td', { klasa: klasaStanu ? `status-tekst ${klasaStanu}` : 'muted', tekst: opis }));
   }));
 }
@@ -349,29 +379,37 @@ function renderujPrzekroczenie() {
   const p = prognoza(stan.wpisy, dzis());
   // Najbliższy kwartał po bieżącym, w którym limit przekroczy zaplanowana sprzedaż (historia jest od najnowszego).
   const planowane = historia.filter((k) => k.prognozaPrzekroczenia && !(p && k.rok === p.rok && k.q === p.q)).pop() ?? null;
-  box.className = 'ramka';
+  // Fakt przekroczenia nie ukrywa prognozy: po nim ramka pokazuje też przekroczenie przewidywane z tempa albo z planu.
+  const czesci = [];
   if (h) {
-    box.classList.add('alarm');
-    zastap(box,
+    czesci.push(
       el('p', { klasa: 'ramka-tytul', tekst: `Limit przekroczony ${dataPl(h.przekroczenie.data)} (${etykietaKwartalu(h.rok, h.q)}).` }),
       el('p', { tekst: `Termin na wniosek do CEIDG mija ${dataPlZDniem(h.przekroczenie.termin)}, czyli 7 dni od przekroczenia.` }),
+      akapitDopisku(h.przekroczenie.termin),
       el('p', {}, 'Jak złożyć wniosek, opisuje ', linkRejestracji(), '.'));
-  } else if (p?.przekroczenie?.prognoza && p.przyczynaPrzekroczenia === 'plan') {
-    box.classList.add('uwaga-ramka');
-    zastap(box,
+  }
+  if (p?.przekroczenie?.prognoza && p.przyczynaPrzekroczenia === 'plan') {
+    czesci.push(
       el('p', { klasa: 'ramka-tytul', tekst: `Według zaplanowanych sprzedaży limit zostanie przekroczony ${dataPl(p.przekroczenie.data)}.` }),
-      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Zaplanowane sprzedaże są większe niż zapas do limitu (${formatujZl(p.zapasGr)}).` }));
+      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Zaplanowane sprzedaże są większe niż zapas do limitu (${formatujZl(p.zapasGr)}).` }),
+      akapitDopisku(p.przekroczenie.termin));
   } else if (p?.przekroczenie?.prognoza) {
-    box.classList.add('uwaga-ramka');
     const poPlanie = p.zaplanowaneGr !== 0n ? ' po odjęciu zaplanowanych sprzedaży' : '';
-    zastap(box,
+    czesci.push(
       el('p', { klasa: 'ramka-tytul', tekst: `Przy obecnym tempie limit zostanie przekroczony około ${dataPl(p.przekroczenie.data)}.` }),
-      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Do limitu zostało ${formatujZl(p.wolneGr)}${poPlanie}.` }));
+      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(p.przekroczenie.termin)}. Do limitu zostało ${formatujZl(p.wolneGr)}${poPlanie}.` }),
+      akapitDopisku(p.przekroczenie.termin));
   } else if (planowane) {
-    box.classList.add('uwaga-ramka');
-    zastap(box,
+    czesci.push(
       el('p', { klasa: 'ramka-tytul', tekst: `Według zaplanowanych sprzedaży limit zostanie przekroczony ${dataPl(planowane.prognozaPrzekroczenia.data)} (${etykietaKwartalu(planowane.rok, planowane.q)}).` }),
-      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(planowane.prognozaPrzekroczenia.termin)}. Zmniejsz albo przesuń zaplanowaną sprzedaż, jeśli chcesz zmieścić się w limicie.` }));
+      el('p', { tekst: `Wtedy termin na wniosek do CEIDG mija ${dataPl(planowane.prognozaPrzekroczenia.termin)}. Zmniejsz albo przesuń zaplanowaną sprzedaż, jeśli chcesz zmieścić się w limicie.` }),
+      akapitDopisku(planowane.prognozaPrzekroczenia.termin));
+  }
+  box.className = 'ramka';
+  if (h) box.classList.add('alarm');
+  else if (czesci.length) box.classList.add('uwaga-ramka');
+  if (czesci.length) {
+    zastap(box, ...czesci);
   } else {
     zastap(box, el('p', { tekst: stan.wpisy.length
       ? 'Na razie limit nie jest przekroczony i prognoza na ten kwartał tego nie przewiduje.'
@@ -399,6 +437,9 @@ function opcjeWalut() {
   );
 }
 
+/** Kwota w formularzu jest zwrotem (zaczyna się od minusa). */
+const zwrotWFormularzu = () => /^\s*[-−]/.test($('f-kwota').value);
+
 function wartosciFormularza() {
   return {
     data: $('f-data').value,
@@ -406,24 +447,34 @@ function wartosciFormularza() {
     waluta: $('f-waluta').value,
     kurs: $('f-waluta').value === 'PLN' ? '' : $('f-kurs').value,
     opis: $('f-opis').value,
+    dotyczy: zwrotWFormularzu() ? $('f-dotyczy').value : '',
   };
+}
+
+/** Przy zwrocie: etykieta „Data zwrotu”, podpowiedź o dacie dokumentu korekty i pole „dotyczy sprzedaży z dnia”. */
+function odswiezZwrot() {
+  const zwrot = zwrotWFormularzu();
+  $('etykieta-data').textContent = zwrot ? 'Data zwrotu' : 'Data sprzedaży';
+  $('f-data-zwrot').hidden = !zwrot;
+  $('pole-dotyczy').hidden = !zwrot;
 }
 
 function pokazBladFormularza(tekst, pole) {
   $('form-blad').textContent = tekst;
   $('form-blad').hidden = !tekst;
-  for (const id of ['f-data', 'f-kwota', 'f-kurs']) $(id).removeAttribute('aria-invalid');
+  for (const id of ['f-data', 'f-kwota', 'f-kurs', 'f-dotyczy']) $(id).removeAttribute('aria-invalid');
   if (pole) { $(pole).setAttribute('aria-invalid', 'true'); $(pole).focus(); }
   if (tekst) oglos(tekst);
 }
 
 function odswiezPodglad() {
+  odswiezZwrot();
   const v = wartosciFormularza();
   const czyWaluta = v.waluta !== 'PLN';
   $('pole-kurs').hidden = !czyWaluta;
   let tekst = '';
   try {
-    const w = normalizujWpis({ ...v, data: v.data || dzis() });
+    const w = normalizujWpis({ ...v, data: v.data || dzis(), dotyczy: '' });
     const gr = kwotaPlnGr(w);
     if (czyWaluta && gr !== null) tekst = `W złotych: ${formatujZl(gr)} (${liczbaPl(w.kwota)} ${w.waluta} × ${liczbaPl(w.kurs)})`;
     else if (czyWaluta) tekst = 'Bez kursu sprzedaż nie liczy się do limitu. Kurs pobierzemy z NBP albo wpisz go sam.';
@@ -481,6 +532,7 @@ function wyczyscFormularz() {
   $('f-kwota').value = '';
   $('f-opis').value = '';
   $('f-kurs').value = '';
+  $('f-dotyczy').value = '';
   $('kurs-info').textContent = '';
   $('form-tytul').textContent = 'Dodaj sprzedaż';
   $('f-zapisz').textContent = 'Dodaj sprzedaż';
@@ -507,9 +559,10 @@ function zapiszFormularz(ev) {
       id: stan.edytowany ?? noweId(),
       kursData: stan.kursInfo?.data ?? '',
       kursTabela: stan.kursInfo?.tabela ?? '',
+      zmieniono: new Date().toISOString(), // przy łączeniu wersji z dwóch kart wygrywa później zmieniona (polaczWpisy)
     });
   } catch (e) {
-    const pole = /datę/.test(e.message) ? 'f-data' : /Kurs/.test(e.message) ? 'f-kurs' : /kwot|Kwota/i.test(e.message) ? 'f-kwota' : null;
+    const pole = /dotyczy zwrot/.test(e.message) ? 'f-dotyczy' : /datę/.test(e.message) ? 'f-data' : /Kurs/.test(e.message) ? 'f-kurs' : /kwot|Kwota/i.test(e.message) ? 'f-kwota' : null;
     pokazBladFormularza(e.message, pole);
     return;
   }
@@ -544,8 +597,14 @@ function pokazPotwierdzenie(wpis, edycja) {
     klasa = klasaProgu(kw.status);
     const etykieta = etykietaKwartalu(rok, q);
     const doDzis = kw.zaplanowane ? ' do dziś' : '';
-    if (kw.status.przekroczony) {
-      stanKw = `${etykieta}: ${procentTekst(kw.status.procent)} limitu, limit przekroczony.`;
+    if (kw.przyszly) {
+      // Kwartał jeszcze się nie zaczął: cała jego sprzedaż jest zaplanowana, więc bez „0,0% limitu do dziś”.
+      klasa = klasaProgu(kw.statusZPlanem);
+      stanKw = `${etykieta} jeszcze się nie zaczął. Zaplanowane: ${formatujZl(kw.zaplanowaneGr)} (${procentTekst(kw.statusZPlanem.procent)} limitu)`;
+      stanKw += kw.prognozaPrzekroczenia ? `, według nich przekroczysz limit ${dataPl(kw.prognozaPrzekroczenia.data)}.` : `, zostanie ${formatujZl(kw.wolneGr)}.`;
+    } else if (kw.status.przekroczony) {
+      const od = kw.status.przekroczonyOd ? ` ${dataPl(kw.status.przekroczonyOd)}` : '';
+      stanKw = `${etykieta}: ${procentTekst(kw.status.procent)} limitu, limit przekroczony${od}.`;
     } else if (kw.prognozaPrzekroczenia) {
       // „Zostało” liczymy od limitu minus sprzedaż do dziś i zaplanowana; tu plan już przekracza limit.
       klasa = klasaProgu(kw.statusZPlanem);
@@ -586,6 +645,7 @@ function edytuj(id) {
   $('f-waluta').value = w.waluta;
   $('f-kurs').value = w.kurs ? liczbaPl(w.kurs) : '';
   $('f-opis').value = w.opis;
+  $('f-dotyczy').value = w.dotyczy ?? '';
   stan.kursRecznie = Boolean(w.kurs);
   stan.kursInfo = w.kursData ? { data: w.kursData, tabela: w.kursTabela } : null;
   $('kurs-info').textContent = w.kursData ? `Kurs z ${dataPlZDniem(w.kursData)}${w.kursTabela ? `, tabela ${w.kursTabela}` : ''}.` : '';
@@ -820,7 +880,7 @@ function pokazPrzyklad() {
 async function wyczysc() {
   const odp = await zapytaj({
     tytul: 'Wyczyścić dane?',
-    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury, dane klientów i zapamiętane przekroczenie limitu KSeF. Bez zapisanego pliku i PDF faktur nie da się ich odzyskać.',
+    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury, Twoje dane do faktur, dane klientów, zapamiętane przekroczenie limitu KSeF i ustawienia pamięci. Bez zapisanego pliku i PDF faktur nie da się ich odzyskać.',
     przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyczyść dane', wynik: true, klasa: 'niebezpieczny' }],
   });
   if (!odp) return;
@@ -832,6 +892,7 @@ async function wyczysc() {
   $('druk-osoba').value = '';
   wyczyscFormularz();
   if (!stan.pamietaj) magazyn.zapiszUstawienia({ pamietaj: false });
+  odswiezPamiecDanych();
   odswiez();
   pokazStanPliku('Dane wyczyszczone.');
   oglos('Dane wyczyszczone.');
@@ -840,7 +901,7 @@ async function wyczysc() {
 async function zmienPamiec() {
   if ($('pamietaj').checked) {
     stan.pamietaj = true;
-    magazyn.zapiszUstawienia({ pamietaj: true, osoba: $('druk-osoba').value.trim() || undefined });
+    magazyn.zmienUstawienia({ pamietaj: true });
     // Pamięć mogła być włączona w innej karcie: łączymy wpisy z tej strony z zapisanymi, zamiast je nadpisać.
     if (!stan.przyklad) {
       const lokalne = stan.wpisy;
@@ -854,14 +915,53 @@ async function zmienPamiec() {
   }
   const odp = await zapytaj({
     tytul: 'Wyłączyć pamięć przeglądarki?',
-    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, faktury, dane klientów i zapamiętane przekroczenie limitu KSeF. Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.',
+    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury i zapamiętane przekroczenie limitu KSeF. Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.',
     przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
   });
   if (!odp) { $('pamietaj').checked = true; return; }
   stan.pamietaj = false;
-  magazyn.wyczysc();
-  magazyn.zapiszUstawienia({ pamietaj: false });
-  oglos('Pamięć wyłączona. Dane usunięte z tej przeglądarki, zapisz plik przed zamknięciem strony.');
+  magazyn.usunWpisy();
+  oglos('Pamięć wpisów wyłączona. Wpisy i faktury usunięte z tej przeglądarki, zapisz plik przed zamknięciem strony.');
+}
+
+/** Imię do wydruku to dana osobowa: zapisujemy je tylko przy włączonym „Zapamiętaj moje dane…”. */
+function zapiszOsobe() {
+  if (stan.dostepna && magazyn.pamiecDanychWlaczona()) magazyn.zmienUstawienia({ osoba: $('druk-osoba').value.trim() || undefined });
+}
+
+const TEKST_USUNIECIA_DANYCH = 'Usuniemy z tej przeglądarki Twoje dane do faktur (imię i nazwisko, NIP albo PESEL, adres), zapisanych klientów, imię do wydruku i dane osobowe z zapisanych faktur. Zostaną wpisy oraz numery, daty i kwoty faktur.';
+
+/** Dane z wcześniejszej wersji strony: wybór „Usuń” (z potwierdzeniem). */
+async function usunDaneZWczesniejszej() {
+  const odp = await zapytaj({
+    tytul: 'Usunąć dane do faktur?',
+    tekst: TEKST_USUNIECIA_DANYCH,
+    przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Usuń', wynik: true, klasa: 'niebezpieczny' }],
+  });
+  if (!odp) { setTimeout(() => $('migracja-usun').focus(), 0); return; }
+  magazyn.usunDaneFaktur();
+  odswiezPamiecDanych();
+  oglos('Dane osobowe do faktur usunięte z tej przeglądarki.');
+  setTimeout(() => $('pamietaj-dane').focus(), 0);
+}
+
+async function zmienPamiecDanych() {
+  if ($('pamietaj-dane').checked) {
+    magazyn.zachowajDaneFaktur();
+    zapiszOsobe();
+    odswiezPamiecDanych();
+    oglos('Twoje dane i dane klientów do faktur będą pamiętane w tej przeglądarce.');
+    return;
+  }
+  const odp = await zapytaj({
+    tytul: 'Nie pamiętać danych do faktur?',
+    tekst: TEKST_USUNIECIA_DANYCH,
+    przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
+  });
+  if (!odp) { $('pamietaj-dane').checked = true; return; }
+  magazyn.usunDaneFaktur();
+  odswiezPamiecDanych();
+  oglos('Dane osobowe do faktur usunięte z tej przeglądarki.');
 }
 
 // ------------------------------------------------------------ start
@@ -892,8 +992,17 @@ function start() {
   $('plik').addEventListener('change', async () => { await wczytajPlik($('plik').files[0]); $('plik').value = ''; });
   $('drukuj').addEventListener('click', drukuj);
   window.addEventListener('beforeprint', zbudujWydruk);
-  $('druk-osoba').addEventListener('change', () => { if (stan.pamietaj) magazyn.zapiszUstawienia({ pamietaj: true, osoba: $('druk-osoba').value.trim() || undefined }); });
+  $('druk-osoba').addEventListener('change', zapiszOsobe);
   $('pamietaj').addEventListener('change', zmienPamiec);
+  $('pamietaj-dane').addEventListener('change', zmienPamiecDanych);
+  $('migracja-zachowaj').addEventListener('click', () => {
+    magazyn.zachowajDaneFaktur();
+    zapiszOsobe();
+    odswiezPamiecDanych();
+    oglos('Zachowano Twoje dane do faktur. Zmienisz to przełącznikiem „Zapamiętaj moje dane i dane klientów do faktur”.');
+    $('pamietaj-dane').focus();
+  });
+  $('migracja-usun').addEventListener('click', usunDaneZWczesniejszej);
   $('wyczysc').addEventListener('click', wyczysc);
 
   // Bez pamięci przeglądarki albo po nieudanym zapisie w niej: ostrzeżenie przed zamknięciem strony z niezapisanymi wpisami.

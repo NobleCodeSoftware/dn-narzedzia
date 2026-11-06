@@ -7,7 +7,8 @@ import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, sumaGr, sumaFirmWMiesiacu,
   BladPola, LIMIT_POZA_KSEF_GR, sprawdzIdSprzedawcy, poprawnyPesel, miesiacDopelniacz, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU, lukaWNumeracji, polaczUtrate, dataReguly, skrotKsef,
-  polaczFaktury, proponowanyNumer as numerPoPolaczeniu,
+  polaczFaktury, proponowanyNumer as numerPoPolaczeniu, opisTerminu, PODPOWIEDZ_ZAPLATY, nadajIdFakturom, bezFaktury,
+  ETYKIETA_INNYCH, ZAKRES_INNYCH, INFO_INNYCH,
 } from '../public/js/faktura-logika.js';
 
 const NIP_OK = '1234563218'; // suma kontrolna: 118 mod 11 = 8
@@ -270,7 +271,9 @@ test('bez localStorage (tryb prywatny, zablokowana pamięć): magazyn nie rzuca,
   try {
     // 1) brak obiektu
     Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true, writable: true });
-    assert.deepEqual(magazyn.wczytajFaktury(), { faktury: [], sprzedawca: null, nabywcy: [], utrataOd: null });
+    assert.deepEqual(magazyn.wczytajFaktury(), { faktury: [], utrataOd: null });
+    assert.deepEqual(magazyn.wczytajDaneFaktur(), { sprzedawca: null, nabywcy: [] });
+    assert.equal(magazyn.pamiecDanychWlaczona(), false);
     assert.equal(magazyn.zapiszFaktury({ faktury: [], sprzedawca: null, nabywcy: [] }), false);
     assert.equal(magazyn.pamiecWlaczona(), true);
     assert.equal(magazyn.wczytaj(), null);
@@ -494,4 +497,96 @@ test('włączenie pamięci łączy faktury z tej wizyty z zapisanymi w innej kar
   // Inna faktura z tym samym numerem też zostaje: była już wystawiona.
   assert.equal(polaczFaktury([zapisana], [{ ...zapisana, suma: '70.00' }]).length, 2);
   assert.deepEqual(polaczFaktury([], [lokalnaNowa]), [lokalnaNowa]);
+});
+
+// ---------------------------------------------------------------- faktura na żądanie: termin po zapłacie (art. 106b ust. 3 pkt 2, 106i)
+
+test('terminy z datą zapłaty: okno od miesiąca dostawy albo wpłaty, termin według pierwszej pasującej reguły', () => {
+  // sprzedaż / zapłata / żądanie → wynik
+  const a = terminy('2026-10-20', '2027-02-15', ['2026-12-05']);
+  assert.deepEqual([a.poTerminieZadania, a.termin, a.terminNiejasny], [false, '2027-03-02', false]);
+  assert.equal(a.zadanieDo, '2027-03-31', 'najpóźniejszy koniec okna: 3 miesiące od końca grudnia');
+  const b = terminy('2026-10-20', '2026-10-25', ['2026-12-05']);
+  assert.deepEqual([b.termin, b.terminNiejasny], ['2026-11-15', false]);
+  const c = terminy('2026-10-20', '2026-11-05', ['2026-11-03']);
+  assert.deepEqual([c.termin, c.terminNiejasny], ['2026-11-15', true]);
+  const d = terminy('2026-10-20', '2026-12-10', ['2026-12-05']);
+  assert.deepEqual([d.termin, d.terminNiejasny], ['2026-12-10', true]);
+  assert.equal(opisTerminu(d), 'Przepisy nie rozstrzygają terminu w tej sytuacji. Wystaw fakturę niezwłocznie, najpóźniej 10.12.2026.');
+  // Bez wpłaty to samo żądanie (15.02.2027) jest już po terminie.
+  assert.equal(terminy('2026-10-20', '2027-02-15').poTerminieZadania, true);
+  // Po końcu okna wpłaty: po terminie.
+  const po = terminy('2026-10-20', '2027-04-01', ['2026-12-05']);
+  assert.equal(po.poTerminieZadania, true);
+  assert.match(opisTerminu(po), /Prośba przyszła po 31\.03\.2027/);
+});
+
+test('terminy: zaliczka przed sprzedażą i żądanie w miesiącu zaliczki → 15. dzień po miesiącu zaliczki', () => {
+  const t = terminy('2026-11-20', '2026-10-20', ['2026-10-05']);
+  assert.deepEqual([t.termin, t.terminNiejasny, t.poTerminieZadania], ['2026-11-15', false, false]);
+  assert.match(t.przepis, /art\. 106i ust\. 2/);
+  // Żądanie po miesiącu zaliczki, ale w miesiącu dostawy: 15. dzień po miesiącu dostawy.
+  assert.equal(terminy('2026-11-20', '2026-11-21', ['2026-10-05']).termin, '2026-12-15');
+  // Niepoprawne i powtórzone daty wpłat są pomijane.
+  assert.deepEqual(terminy('2026-10-20', '', ['', 'x', '2026-12-05', '2026-12-05']).zaplaty, ['2026-12-05']);
+});
+
+test('terminy bez daty zapłaty działają jak dotąd, a formularz podpowiada, kiedy podać zapłatę', () => {
+  for (const [zadanie, termin] of [['', '2026-11-15'], ['2026-10-25', '2026-11-15'], ['2026-12-03', '2026-12-18']]) {
+    const z = terminy('2026-10-20', zadanie);
+    assert.equal(z.termin, termin);
+    assert.equal(z.terminNiejasny, false);
+    assert.deepEqual(terminy('2026-10-20', zadanie, []), z);
+  }
+  assert.equal(PODPOWIEDZ_ZAPLATY, 'Jeśli klient zapłacił później niż w miesiącu sprzedaży, podaj datę zapłaty, bo termin na żądanie może być dłuższy.');
+  assert.match(opisTerminu(terminy('2026-10-20')), /^Termin wystawienia: do 15\.11\.2026 \(art\. 106i ust\. 6 pkt 1 ustawy o VAT\)\. Klient może poprosić do 31\.01\.2027\.$/);
+  assert.deepEqual(normalizujFakture(faktura({ zaplaty: ['2026-10-25', 'zle'] })).zaplaty, ['2026-10-25']);
+  assert.deepEqual(normalizujFakture(faktura()).zaplaty, []);
+});
+
+test('KSeF od 1.01.2027: faktura dla firmy zablokowana z komunikatem o KSeF (wymaga NIP, mówi o tym ramka blokady)', () => {
+  const r = regulaKsef({ dataWystawienia: '2027-01-01', dzis: '2027-01-01', rodzaj: 'firma', kwotaGr: 100n });
+  assert.deepEqual([r.stan, r.powod], ['blokada', 'ksef-2027']);
+  assert.equal(opisKsef(r), 'Od 1.01.2027 każdą fakturę dla firmy wystawiasz w KSeF. Tutaj jej nie wystawisz.');
+});
+
+// ---------------------------------------------------------------- limit 10 000 zł: faktury z KSeF też w sumie (wariant ostrożny)
+
+test('KSeF 2026: inneGr obejmuje fakturę dla firmy z KSeF i przesądza o przekroczeniu limitu', () => {
+  const f = [zapisana('1/2026', '2026-10-05', '6000')];
+  const bezKsef = regulaKsef({ dataWystawienia: '2026-10-22', dzis: '2026-10-22', rodzaj: 'firma', kwotaGr: zl('1500'), faktury: f });
+  assert.equal(bezKsef.powod, 'w-limicie');
+  // Ta sama faktura, gdy w tym miesiącu była też faktura dla firmy w KSeF na 3000 zł (wpisana w „inne faktury”).
+  const zKsef = regulaKsef({ dataWystawienia: '2026-10-22', dzis: '2026-10-22', rodzaj: 'firma', kwotaGr: zl('1500'), faktury: f, inneGr: zl('3000') });
+  assert.deepEqual([zKsef.stan, zKsef.powod, zKsef.poGr], ['blokada', 'limit', zl('10500')]);
+  assert.equal(ETYKIETA_INNYCH, 'Faktury dla firm wystawione w tym miesiącu gdzie indziej, w KSeF i poza nim');
+  assert.equal(ZAKRES_INNYCH, 'Bez faktur z kasy fiskalnej i bez faktur dla osób prywatnych.');
+  assert.equal(INFO_INNYCH, 'Przepis mówi o fakturach wystawionych poza KSeF. Liczymy też faktury z KSeF, żeby nie zaniżyć sumy.');
+});
+
+test('KSeF 2026: granica limitu z fakturami z KSeF: równo 10 000,00 zł w limicie, 10 000,01 zł już ta faktura w KSeF', () => {
+  const f = [zapisana('1/2026', '2026-10-05', '6000'), zapisana('2/2026', '2026-10-06', '500', 'konsument')];
+  const rowno = regulaKsef({ dataWystawienia: '2026-10-22', dzis: '2026-10-22', rodzaj: 'firma', kwotaGr: zl('1000'), faktury: f, inneGr: zl('3000') });
+  assert.deepEqual([rowno.stan, rowno.powod, rowno.poGr, rowno.zapasGr], ['poza-ksef', 'w-limicie', zl('10000'), 0n]);
+  const grosz = regulaKsef({ dataWystawienia: '2026-10-22', dzis: '2026-10-22', rodzaj: 'firma', kwotaGr: zl('1000.01'), faktury: f, inneGr: zl('3000') });
+  assert.deepEqual([grosz.stan, grosz.powod, grosz.poGr], ['blokada', 'limit', zl('10000.01')]);
+  assert.match(spacje(opisKsef(rowno)), /^Faktury dla firm w październiku 2026 z tą fakturą: 10 000,00 zł z 10 000,00 zł\./);
+});
+
+// ---------------------------------------------------------------- usuwanie faktury po identyfikatorze
+
+test('usuwanie faktury po identyfikatorze: przy dwóch fakturach z tym samym numerem znika tylko wskazana', () => {
+  const a = { ...zapisana('1/2026', '2026-10-05', '100'), id: 'fa' };
+  const b = { ...zapisana('1/2026', '2026-10-06', '200'), id: 'fb' };
+  assert.deepEqual(bezFaktury([a, b], 'fb').map((f) => f.id), ['fa']);
+  assert.deepEqual(bezFaktury([a, b], 'nie-ma').length, 2);
+  // Faktury bez id (starsze wersje strony) dostają stały identyfikator, ten sam przy każdym odczycie.
+  const stare = [zapisana('1/2026', '2026-10-05', '100'), zapisana('1/2026', '2026-10-05', '100')];
+  const raz = nadajIdFakturom(stare);
+  assert.deepEqual(raz.map((f) => f.id), nadajIdFakturom(stare).map((f) => f.id));
+  assert.notEqual(raz[0].id, raz[1].id);
+  assert.equal(bezFaktury(raz, raz[0].id).length, 1);
+  assert.equal(nadajIdFakturom([a])[0].id, 'fa', 'istniejący identyfikator zostaje');
+  // Połączenie list z dwóch kart nie dubluje faktur z wyliczonym identyfikatorem.
+  assert.equal(polaczFaktury(nadajIdFakturom(stare), nadajIdFakturom(stare)).length, 2);
 });

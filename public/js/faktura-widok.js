@@ -8,6 +8,7 @@ import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, nipZKreskami, dataPl, MAX_POZYCJI,
   MAX_KWOTA_GR, BladPola, lukaWNumeracji, polaczUtrate, skrotKsef, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU, polaczFaktury,
+  nadajIdFakturom, bezFaktury, opisTerminu, MAX_ZAPLAT,
 } from './faktura-logika.js';
 import * as magazyn from './magazyn.js';
 
@@ -18,13 +19,15 @@ const stan = {
   faktury: [],
   sprzedawca: null,
   nabywcy: [],
-  pamietaj: true,
+  pamietaj: true, // „Pamiętaj wpisy ewidencji”: wystawione faktury i utrata prawa
+  pamietajDane: false, // „Zapamiętaj moje dane i dane klientów do faktur”: dane sprzedawcy i zapisani klienci
   dostepna: true, // czy pamięć przeglądarki w ogóle działa
   pozycje: 1,
   numerRecznie: false,
   utrataOd: null, // 'RRRR-MM': od tego miesiąca faktury dla firm tylko w KSeF (art. 145m ust. 2), zapamiętane w magazyn
   doDruku: null, // znormalizowana faktura przygotowana do wydruku
 };
+const wystawioneTeraz = new Set(); // id faktur wystawionych w tej wizycie (ich pełne dane zostają na stronie do zamknięcia)
 let licznikId = 0;
 const noweId = () => `f${Date.now().toString(36)}${(licznikId += 1).toString(36)}`;
 
@@ -80,7 +83,10 @@ function zapytaj({ tytul, tekst, przyciski }) {
 // ------------------------------------------------------------ pamięć
 
 function utrwal() {
-  if (stan.pamietaj) magazyn.zapiszFaktury({ faktury: stan.faktury, sprzedawca: stan.sprzedawca, nabywcy: stan.nabywcy, utrataOd: stan.utrataOd });
+  // Bez zgody na dane osobowe magazyn zapisuje faktury w skrócie (numer, daty, kwota, rodzaj nabywcy).
+  if (stan.pamietaj) magazyn.zapiszFaktury({ faktury: stan.faktury, utrataOd: stan.utrataOd });
+  // Dane sprzedawcy (NIP albo PESEL, adres) i klientów tylko po włączeniu drugiego przełącznika.
+  if (stan.pamietajDane) magazyn.zapiszDaneFaktur({ sprzedawca: stan.sprzedawca, nabywcy: stan.nabywcy });
 }
 
 function wczytajStart() {
@@ -93,16 +99,45 @@ function wczytajZMagazynu() {
   stan.pamietaj = stan.dostepna && magazyn.pamiecWlaczona();
   $('pamietaj').checked = stan.pamietaj;
   $('pamietaj').disabled = !stan.dostepna;
+  const dane = magazyn.stanPamieciDanych();
+  stan.pamietajDane = stan.dostepna && dane.wlaczona;
+  $('pamietaj-dane').checked = stan.pamietajDane;
+  $('pamietaj-dane').disabled = !stan.dostepna;
+  // Dane z wcześniejszej wersji: jednorazowy wybór „Zachowaj moje dane” albo „Usuń”.
+  $('pamietaj-dane-migracja').hidden = !(stan.dostepna && dane.czekaNaWybor);
+  if (stan.pamietajDane) {
+    // Przy wyłączonym przełączniku dane z tej wizyty zostają tylko na stronie (nie są zastępowane pustymi).
+    const z = magazyn.wczytajDaneFaktur();
+    stan.sprzedawca = z.sprzedawca;
+    stan.nabywcy = z.nabywcy.filter((n) => n && typeof n.nazwa === 'string');
+  }
   if (!stan.pamietaj) return;
   const d = magazyn.wczytajFaktury();
   // Zapisane faktury zostają, nawet gdy później zaostrzyliśmy walidację: tylko numer, data i kwota muszą być czytelne
   // (inaczej numeracja straciłaby wcześniejsze numery).
-  stan.faktury = d.faktury.filter((f) => {
-    try { return /^\d+\/\d{4}$/.test(f.numer) && naGrosze(f.suma) > 0n && /^\d{4}-\d{2}-\d{2}$/.test(f.dataWystawienia) && Array.isArray(f.pozycje); } catch { return false; }
-  });
-  stan.sprzedawca = d.sprzedawca;
+  // Faktury ze starszych wersji nie mają identyfikatora: dostają stały, wyliczony (usuwanie po identyfikatorze, nie numerze).
+  // Rekord skrócony (bez danych osobowych) też wystarcza do numeracji i limitu KSeF. Pełne faktury z tej wizyty
+  // zostają w pamięci strony, więc „Drukuj” działa dla nich do zamknięcia strony.
+  const naStronie = new Map(stan.faktury.filter(pelnaFaktura).map((f) => [f.id, f]));
+  stan.faktury = nadajIdFakturom(d.faktury.filter((f) => {
+    try { return /^\d+\/\d{4}$/.test(f.numer) && naGrosze(f.suma) > 0n && /^\d{4}-\d{2}-\d{2}$/.test(f.dataWystawienia); } catch { return false; }
+  })).map((f) => (pelnaFaktura(f) ? f : naStronie.get(f.id) ?? f));
   stan.utrataOd = d.utrataOd;
-  stan.nabywcy = d.nabywcy.filter((n) => n && typeof n.nazwa === 'string');
+}
+
+/** Czy faktura ma wszystko do wydruku (pełny rekord, a nie skrócony bez danych osobowych). */
+function pelnaFaktura(f) {
+  return Array.isArray(f?.pozycje) && f.pozycje.length > 0 && Boolean(f.sprzedawca?.nazwa) && Boolean(f.nabywca?.nazwa) && Boolean(f.podstawa?.tekst);
+}
+
+/** Wpisuje zapamiętane dane sprzedawcy w puste pola formularza. */
+function wypelnijSprzedawce() {
+  if (!stan.sprzedawca) return false;
+  const pola = [['f-sprzedawca-nazwa', stan.sprzedawca.nazwa ?? ''], ['f-sprzedawca-adres', stan.sprzedawca.adres ?? '']];
+  const id = stan.sprzedawca.id ?? stan.sprzedawca.nip ?? ''; // starsze zapisy mają tylko pole nip
+  pola.push(['f-sprzedawca-nip', stan.sprzedawca.rodzajId === 'PESEL' ? id : (id ? nipZKreskami(id) : '')]);
+  for (const [pole, wartosc] of pola) if (!$(pole).value) $(pole).value = wartosc;
+  return true;
 }
 
 /** Inna karta zmieniła dane strony: wczytujemy je ponownie, żeby numeracja i reguła KSeF znały wszystkie faktury. */
@@ -139,6 +174,42 @@ function wierszPozycji(i) {
     el('div', { klasa: 'pole' }, el('label', { for: id('cena'), tekst: 'Cena (zł)' }),
       el('input', { id: id('cena'), inputmode: 'decimal', autocomplete: 'off', placeholder: 'np. 450' })),
     usun);
+}
+
+// ------------------------------------------------------------ wpłaty (daty zapłaty, także zaliczki)
+
+function wierszZaplaty(i) {
+  const usun = i > 0
+    ? el('button', { type: 'button', klasa: 'drugorzedny maly', tekst: 'Usuń', 'aria-label': `Usuń wpłatę ${i + 1}`, onclick: () => usunZaplate(i) })
+    : null;
+  return el('li', { klasa: 'zaplata' },
+    el('div', { klasa: 'pole' },
+      el('label', { for: `zaplata-${i}`, tekst: i === 0 ? 'Data wpłaty' : `Data wpłaty ${i + 1}` }),
+      el('input', { id: `zaplata-${i}`, type: 'date', min: '2020-01-01', max: '2035-12-31', 'aria-describedby': 'zaplaty-info' })),
+    usun);
+}
+
+const odczytajZaplaty = () => [...$('zaplaty').querySelectorAll('input[type="date"]')].map((e) => e.value);
+
+function ustawZaplaty(lista) {
+  zastap($('zaplaty'), ...lista.map((_, i) => wierszZaplaty(i)));
+  lista.forEach((d, i) => { $(`zaplata-${i}`).value = d; });
+  $('dodaj-zaplate').hidden = lista.length >= MAX_ZAPLAT;
+}
+
+function dodajZaplate() {
+  const lista = odczytajZaplaty();
+  if (lista.length >= MAX_ZAPLAT) return;
+  ustawZaplaty([...lista, '']);
+  $(`zaplata-${lista.length}`).focus();
+  odswiez();
+}
+
+function usunZaplate(i) {
+  ustawZaplaty(odczytajZaplaty().filter((_, j) => j !== i));
+  $(`zaplata-${Math.max(0, i - 1)}`).focus();
+  oglos(`Usunięto wpłatę ${i + 1}.`);
+  odswiez();
 }
 
 function odczytajPozycje() {
@@ -184,6 +255,7 @@ function wartosciFormularza() {
     dataWystawienia: dzis(), // pokazywana jako tekst, zawsze dziś (art. 106e ust. 1 pkt 1)
     dataSprzedazy: $('f-data-sprzedazy').value,
     dataZadania: $('f-data-zadania').value,
+    zaplaty: odczytajZaplaty(),
     sprzedawca: { nazwa: $('f-sprzedawca-nazwa').value, adres: $('f-sprzedawca-adres').value, id: $('f-sprzedawca-nip').value },
     nabywca: { rodzaj: rodzaj(), nazwa: $('f-nabywca-nazwa').value, adres: $('f-nabywca-adres').value, nip: $('f-nabywca-nip').value },
     pozycje: odczytajPozycje(),
@@ -249,12 +321,13 @@ function odswiezNumer() {
 
 function odswiezTermin() {
   const ds = $('f-data-sprzedazy').value;
+  const zaplaty = odczytajZaplaty();
+  // Bez daty zapłaty termin liczy się jak dotąd, a podpowiedź mówi, kiedy warto ją podać.
+  $('zaplaty-info').hidden = zaplaty.some((d) => d);
   if (!ds) { $('termin-info').textContent = ''; return; }
-  const t = terminy(ds, $('f-data-zadania').value);
-  let tekst = `Termin wystawienia: do ${dataPl(t.termin)} (${t.przepis} ustawy o VAT).`;
-  if (t.poTerminieZadania) tekst = `Prośba przyszła po ${dataPl(t.zadanieDo)}, czyli po 3 miesiącach od końca miesiąca sprzedaży (art. 106b ust. 3).`;
-  else if (!$('f-data-zadania').value) tekst += ` Klient może poprosić do ${dataPl(t.zadanieDo)}.`;
-  $('termin-info').textContent = tekst;
+  const t = terminy(ds, $('f-data-zadania').value, zaplaty);
+  $('termin-info').textContent = opisTerminu(t, { zadanie: $('f-data-zadania').value });
+  $('termin-info').className = `podpowiedz${t.terminNiejasny || t.poTerminieZadania ? ' ostrzezenie-tekst' : ''}`;
 }
 
 /** Podsumowanie: kwota, słownie, stan KSeF. Wywoływane przy każdej zmianie formularza. */
@@ -330,6 +403,7 @@ async function wystaw(ev) {
     pokazBlad(e.message, e instanceof BladPola ? e.pole : null);
     return;
   }
+  f.id = noweId(); // unikalny identyfikator: usuwanie z listy nie zależy od numeru
   if (numerZajety(stan.faktury, f.numer)) {
     pokazBlad(`Faktura ${f.numer} już jest na liście. Zmień numer albo wydrukuj ją ponownie z listy.`, 'numer');
     return;
@@ -372,6 +446,7 @@ async function wystaw(ev) {
   }
   pokazBlad('');
   stan.faktury = [...stan.faktury, f];
+  wystawioneTeraz.add(f.id);
   stan.sprzedawca = f.sprzedawca;
   stan.nabywcy = dopiszNabywce(stan.nabywcy, f.nabywca);
   utrwal();
@@ -445,10 +520,13 @@ function renderujListe() {
     return el('li', { klasa: 'wpis' },
       el('div', { klasa: 'wpis-tresc' },
         el('p', { klasa: 'wpis-data', tekst: dataPl(f.dataWystawienia) }),
-        el('p', { klasa: 'wpis-opis', tekst: `${f.numer} · ${f.nabywca.nazwa}${f.nabywca.rodzaj === 'firma' ? ' (firma)' : ''}` }),
+        el('p', { klasa: 'wpis-opis', tekst: f.nabywca?.nazwa
+          ? `${f.numer} · ${f.nabywca.nazwa}${f.nabywca.rodzaj === 'firma' ? ' (firma)' : ''}`
+          : `${f.numer} · ${f.nabywca?.rodzaj === 'firma' ? 'dla firmy' : 'dla osoby prywatnej'} (bez danych klienta)` }),
         el('p', { klasa: 'wpis-kwota', tekst: kwota })),
       el('div', { klasa: 'wpis-akcje' },
-        el('button', { type: 'button', klasa: 'drugorzedny maly', tekst: 'Drukuj', 'aria-label': `Drukuj fakturę ${f.numer}`, onclick: () => drukuj(f) }),
+        // Drukuj tylko pełną fakturę: rekord skrócony nie ma danych stron ani pozycji.
+        pelnaFaktura(f) ? el('button', { type: 'button', klasa: 'drugorzedny maly', tekst: 'Drukuj', 'aria-label': `Drukuj fakturę ${f.numer}`, onclick: () => drukuj(f) }) : null,
         moznaUsunac(stan.faktury, f.numer)
           ? el('button', { type: 'button', klasa: 'drugorzedny maly', tekst: 'Usuń', 'aria-label': `Usuń fakturę ${f.numer}`, onclick: () => usunFakture(f) })
           : null));
@@ -462,7 +540,7 @@ async function usunFakture(f) {
     przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Usuń', wynik: true, klasa: 'niebezpieczny' }],
   });
   if (!odp) return;
-  stan.faktury = stan.faktury.filter((x) => x.numer !== f.numer);
+  stan.faktury = bezFaktury(stan.faktury, f.id); // po identyfikatorze: druga faktura z tym samym numerem zostaje
   utrwal();
   renderujListe();
   odswiez();
@@ -496,7 +574,7 @@ function wybierzZapisanego() {
 async function zmienPamiec() {
   if ($('pamietaj').checked) {
     stan.pamietaj = true;
-    magazyn.zapiszUstawienia({ ...magazyn.wczytajUstawienia(), pamietaj: true });
+    magazyn.zmienUstawienia({ pamietaj: true });
     // Pamięć mogła być włączona w innej karcie: łączymy faktury z tej wizyty z zapisanymi, zamiast je nadpisać.
     const lokalne = { faktury: stan.faktury, sprzedawca: stan.sprzedawca, nabywcy: stan.nabywcy, utrataOd: stan.utrataOd };
     wczytajZMagazynu();
@@ -506,21 +584,84 @@ async function zmienPamiec() {
     stan.utrataOd = polaczUtrate(stan.utrataOd, lokalne.utrataOd);
     utrwal();
     renderujListe();
-    oglos('Faktury i dane klientów będą pamiętane w tej przeglądarce.');
+    oglos('Wpisy i wystawione faktury będą pamiętane w tej przeglądarce.');
   } else {
     const odp = await zapytaj({
       tytul: 'Wyłączyć pamięć przeglądarki?',
-      tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, faktury i dane klientów. Faktury z tej wizyty zostaną na stronie do jej zamknięcia.',
+      tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury i zapamiętane przekroczenie limitu KSeF. Faktury z tej wizyty zostaną na stronie do jej zamknięcia.',
       przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
     });
     if (!odp) { $('pamietaj').checked = true; return; }
     stan.pamietaj = false;
-    magazyn.wyczysc();
-    magazyn.zapiszUstawienia({ pamietaj: false });
-    oglos('Pamięć wyłączona. Dane usunięte z tej przeglądarki.');
+    magazyn.usunWpisy();
+    oglos('Pamięć wpisów wyłączona. Wpisy i faktury usunięte z tej przeglądarki.');
   }
   odswiezEwidencje();
   odswiez();
+}
+
+/** Przełącznik „Zapamiętaj moje dane i dane klientów do faktur” (domyślnie wyłączony). */
+async function zmienPamiecDanych() {
+  if ($('pamietaj-dane').checked) {
+    magazyn.zachowajDaneFaktur();
+    // Dane mogły być zapisane w innej karcie: łączymy je z danymi z tej wizyty.
+    const lokalne = { sprzedawca: stan.sprzedawca, nabywcy: stan.nabywcy };
+    wczytajZMagazynu();
+    stan.sprzedawca = lokalne.sprzedawca ?? stan.sprzedawca;
+    stan.nabywcy = [...lokalne.nabywcy].reverse().reduce((lista, n) => dopiszNabywce(lista, n), stan.nabywcy);
+    utrwal();
+    wypelnijSprzedawce();
+    renderujListe();
+    oglos('Twoje dane, dane klientów i pełne faktury będą pamiętane w tej przeglądarce.');
+    return;
+  }
+  const odp = await zapytaj({
+    tytul: 'Nie pamiętać danych do faktur?',
+    tekst: TEKST_USUNIECIA_DANYCH,
+    przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
+  });
+  if (!odp) { $('pamietaj-dane').checked = true; return; }
+  stan.pamietajDane = false;
+  magazyn.usunDaneFaktur();
+  skrocWczesniejsze();
+  wczytajZMagazynu();
+  renderujListe();
+  oglos('Dane osobowe do faktur usunięte z tej przeglądarki.');
+}
+
+/** Po usunięciu danych osobowych: faktury sprzed tej wizyty także na stronie tylko w skrócie (bez „Drukuj”). */
+function skrocWczesniejsze() {
+  stan.faktury = stan.faktury.map((f) => (wystawioneTeraz.has(f.id) ? f : magazyn.skrocFakture(f)));
+}
+
+const TEKST_USUNIECIA_DANYCH = 'Usuniemy z tej przeglądarki Twoje dane do faktur (imię i nazwisko, NIP albo PESEL, adres), zapisanych klientów, imię do wydruku ewidencji i dane osobowe z zapisanych faktur. Zostaną numery, daty i kwoty faktur, a dane z tej wizyty zostaną na stronie do jej zamknięcia.';
+
+/** Dane z wcześniejszej wersji strony: wybór „Zachowaj moje dane”. */
+function zachowajDaneZWczesniejszej() {
+  magazyn.zachowajDaneFaktur();
+  wczytajZMagazynu();
+  wypelnijSprzedawce();
+  renderujListe();
+  odswiez();
+  oglos('Zachowano Twoje dane do faktur. Zmienisz to przełącznikiem „Zapamiętaj moje dane i dane klientów do faktur”.');
+  $('pamietaj-dane').focus();
+}
+
+/** Dane z wcześniejszej wersji strony: wybór „Usuń” (z potwierdzeniem). */
+async function usunDaneZWczesniejszej() {
+  const odp = await zapytaj({
+    tytul: 'Usunąć dane do faktur?',
+    tekst: TEKST_USUNIECIA_DANYCH,
+    przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Usuń', wynik: true, klasa: 'niebezpieczny' }],
+  });
+  if (!odp) { setTimeout(() => $('migracja-usun').focus(), 0); return; }
+  magazyn.usunDaneFaktur();
+  skrocWczesniejsze();
+  wczytajZMagazynu();
+  renderujListe();
+  odswiez();
+  oglos('Dane osobowe do faktur usunięte z tej przeglądarki.');
+  setTimeout(() => $('pamietaj-dane').focus(), 0);
 }
 
 function odswiezEwidencje() {
@@ -578,17 +719,13 @@ function odswiezDateWystawienia() {
 function start() {
   wczytajStart();
   ustawPozycje([{ nazwa: '', ilosc: '1', jm: 'szt.', cena: '' }]);
+  ustawZaplaty(['']);
   // Datą wystawienia jest dzień wystawienia: pokazujemy ją jako tekst, nie jako zablokowany kalendarz.
   odswiezDateWystawienia();
   // Po powrocie na kartę (np. po północy) tekst i numer pokazują właściwy dzień.
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { odswiezDateWystawienia(); odswiez(); } });
   $('f-data-sprzedazy').value = dzis();
-  if (stan.sprzedawca) {
-    $('f-sprzedawca-nazwa').value = stan.sprzedawca.nazwa ?? '';
-    $('f-sprzedawca-adres').value = stan.sprzedawca.adres ?? '';
-    const id = stan.sprzedawca.id ?? stan.sprzedawca.nip ?? ''; // starsze zapisy mają tylko pole nip
-    $('f-sprzedawca-nip').value = stan.sprzedawca.rodzajId === 'PESEL' ? id : (id ? nipZKreskami(id) : '');
-  } else {
+  if (!wypelnijSprzedawce()) {
     $('twoje-dane').open = true; // pierwsza faktura: od razu widać pola sprzedawcy
   }
 
@@ -612,7 +749,11 @@ function start() {
     odswiez();
   });
   $('dodaj-pozycje').addEventListener('click', dodajPozycje);
+  $('dodaj-zaplate').addEventListener('click', dodajZaplate);
   $('pamietaj').addEventListener('change', zmienPamiec);
+  $('pamietaj-dane').addEventListener('change', zmienPamiecDanych);
+  $('migracja-zachowaj').addEventListener('click', zachowajDaneZWczesniejszej);
+  $('migracja-usun').addEventListener('click', usunDaneZWczesniejszej);
   $('f-przekroczony').addEventListener('change', zaznaczUtrate);
   $('cofnij-utrate').addEventListener('click', cofnijUtrate);
   window.addEventListener('beforeprint', () => zbudujWydruk(stan.doDruku));

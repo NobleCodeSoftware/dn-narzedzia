@@ -237,7 +237,7 @@ test('usługodawca: ta sama nazwa w stopce, w regulaminie i w polityce prywatno�
   for (const plik of HTML) {
     assert.ok(czytaj(plik).includes('Usługodawca: NobleCode Krzysztof Mizgała · '), `${plik}: stopka bez nazwy usługodawcy`);
   }
-  for (const [s, wersja] of [['regulamin', '0\\.6'], ['prywatnosc', '0\\.5']]) {
+  for (const [s, wersja] of [['regulamin', '0\\.6'], ['prywatnosc', '0\\.6']]) {
     const t = czytaj(join(PUBLIC, `${s}/index.html`));
     assert.match(t, new RegExp(`Wersja:? ${wersja}, obowiązuje od dnia publikacji na stronie\\.`), `${s}: wersja`);
     assert.ok(t.includes('NobleCode Krzysztof Mizgała, e-mail:'), `${s}: nazwa w treści`);
@@ -377,7 +377,18 @@ test('widok faktury: replaceChildren tylko przez zastap(), bez sieci, localStora
 test('polityka i regulamin opisują fakturę i dane klientów w pamięci przeglądarki', () => {
   const pol = czytaj(join(PUBLIC, 'prywatnosc/index.html')).replace(/\s+/g, ' ');
   const reg = czytaj(join(PUBLIC, 'regulamin/index.html')).replace(/\s+/g, ' ');
-  assert.match(pol, /wystawione faktury, Twoje dane z faktury, dane klientów/);
+  for (const fraza of ['Wpisy ewidencji (dn-ewidencja-v1)',
+    'Wystawione faktury w skrócie: numer, daty, kwota i to, czy klient jest firmą, oraz datę utraty prawa do faktur poza KSeF (dn-faktury-v1)',
+    'Dane osobowe zapisują się tylko po włączeniu opcji „Zapamiętaj moje dane i dane klientów do faktur”',
+    'w tym PESEL lub NIP, oraz dane klientów (dn-dane-faktur-v1)', 'Pełne faktury z danymi Twoimi i klientów', 'znacznik czasu zapisu',
+    'Nieobowiązkowe imię do wydruku ewidencji (dn-ewidencja-ustawienia-v1)', 'Nie mamy do nich dostępu, więc nie możemy ich odzyskać ani usunąć',
+    'art. 399 ust. 3 pkt 2 ustawy Prawo komunikacji elektronicznej', 'przetwarzasz je jako ich administrator i odpowiadasz za ich ochronę',
+    'Na wspólnym komputerze albo we wspólnym profilu przeglądarki nie włączaj opcji', '„Wyczyść dane”', 'w ustawieniach przeglądarki',
+    'Zostają ustawienia oraz Twoje dane i dane klientów (dn-dane-faktur-v1), jeśli je zapamiętujesz',
+    'usuwa dn-dane-faktur-v1, imię do wydruku i dane osobowe z zapisanych faktur',
+    'strona zapyta, czy je zachować', 'dopóki nie usuniesz ich Ty albo przeglądarka']) {
+    assert.ok(pol.includes(fraza), `polityka: ${fraza}`);
+  }
   assert.match(pol, /Licznik, ewidencja i faktura działają w Twojej przeglądarce/);
   assert.match(reg, /generator faktury bez VAT do wydruku/);
   assert.match(reg, /nie wysyła faktur ani do KSeF, ani do klienta/);
@@ -450,19 +461,32 @@ test('błąd znika przy zmianie pola, fokus po oknie limitu na cenie, utratę pr
 
 // Wyłączenie pamięci usuwa także faktury, klientów i zapamiętaną utratę prawa do faktur poza KSeF,
 // więc na obu stronach jest okno potwierdzenia, a po anulowaniu przełącznik wraca do zaznaczonego.
-test('ewidencja i faktura: wyłączenie pamięci pyta o potwierdzenie przed usunięciem danych', () => {
+test('ewidencja i faktura: wyłączenie każdego przełącznika pamięci pyta o potwierdzenie przed usunięciem danych', () => {
   for (const plik of ['js/ewidencja-widok.js', 'js/faktura-widok.js']) {
     const kod = czytaj(join(PUBLIC, plik));
-    const fn = kod.slice(kod.indexOf('async function zmienPamiec()'), kod.indexOf('\n}\n', kod.indexOf('async function zmienPamiec()')));
-    assert.ok(fn.length > 0, `${plik}: zmienPamiec jest asynchroniczna`);
-    assert.ok(fn.indexOf('await zapytaj(') >= 0 && fn.indexOf('await zapytaj(') < fn.indexOf('magazyn.wyczysc()'), `${plik}: pytanie przed magazyn.wyczysc()`);
-    assert.match(fn, /tytul: 'Wyłączyć pamięć przeglądarki\?'/);
-    assert.match(fn, /faktury i dane klientów|faktury, dane klientów/);
-    assert.match(fn, /if \(!odp\) \{ \$\('pamietaj'\)\.checked = true; return; \}/);
+    for (const [nazwa, usun, pole, tytul] of [
+      ['zmienPamiec', 'magazyn.usunWpisy()', 'pamietaj', /tytul: 'Wyłączyć pamięć przeglądarki\?'/],
+      ['zmienPamiecDanych', 'magazyn.usunDaneFaktur()', 'pamietaj-dane', /tytul: 'Nie pamiętać danych do faktur\?'/],
+    ]) {
+      const fn = kod.slice(kod.indexOf(`async function ${nazwa}()`), kod.indexOf('\n}\n', kod.indexOf(`async function ${nazwa}()`)));
+      assert.ok(fn.length > 0, `${plik}: ${nazwa} jest asynchroniczna`);
+      assert.ok(fn.indexOf('await zapytaj(') >= 0 && fn.indexOf('await zapytaj(') < fn.indexOf(usun), `${plik}: pytanie przed ${usun}`);
+      assert.match(fn, tytul);
+      assert.ok(fn.includes(`if (!odp) { $('${pole}').checked = true; return; }`), `${plik}: anulowanie przywraca przełącznik ${pole}`);
+      assert.ok(!fn.includes('magazyn.wyczysc()'), `${plik}: ${nazwa} nie usuwa danych drugiego przełącznika`);
+    }
   }
-  const html = czytaj(join(PUBLIC, 'index.html'));
-  assert.match(html, /<input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">/);
-  assert.match(html, /<p id="pamietaj-info" class="podpowiedz">Wyłączenie usuwa z tej przeglądarki także faktury i dane klientów\./);
+  for (const strona of ['index.html', 'faktura/index.html']) {
+    const html = czytaj(join(PUBLIC, strona));
+    assert.match(html, /<input type="checkbox" id="pamietaj" checked aria-describedby="pamietaj-info">\n\s+<label for="pamietaj">Pamiętaj wpisy ewidencji<\/label>/, strona);
+    assert.match(html, /<input type="checkbox" id="pamietaj-dane" aria-describedby="pamietaj-dane-zakres pamietaj-dane-info">\n\s+<label for="pamietaj-dane">Zapamiętaj moje dane i dane klientów do faktur<\/label>/, `${strona}: drugi przełącznik domyślnie wyłączony`);
+    assert.match(html, /<p id="pamietaj-dane-info" class="podpowiedz">Dane zostaną tylko w tej przeglądarce\. Na wspólnym komputerze zobaczy je każdy użytkownik\.<\/p>/, strona);
+    assert.match(html, /<p id="pamietaj-info" class="podpowiedz">[^<]*wystawione faktury, ale bez danych osobowych/, `${strona}: faktury domyślnie bez danych osobowych`);
+    // Dane z wcześniejszej wersji: jednorazowy wybór z dwoma przyciskami.
+    assert.match(html, /<div id="pamietaj-dane-migracja" class="ramka uwaga-ramka" hidden>/, strona);
+    assert.match(html, /<button type="button" class="drugorzedny maly" id="migracja-zachowaj">Zachowaj moje dane<\/button>/, strona);
+    assert.match(html, /<button type="button" class="niebezpieczny maly" id="migracja-usun">Usuń<\/button>/, strona);
+  }
 });
 
 test('ewidencja: okno „Wyczyść dane” wymienia wszystko, co usuwa', () => {
@@ -703,4 +727,70 @@ test('faktura: pierwsza pozycja w HTML ma ten sam układ co wiersz renderowany p
   for (const t of ["tekst: `Pozycja ${i + 1}: towar lub usługa`", "tekst: 'Ilość'", "tekst: 'Jednostka'", "tekst: 'Cena (zł)'", "placeholder: i === 0 ? 'np. projekt logo' : null", "value: 'szt.'"]) {
     assert.ok(kod.includes(t), `skrypt renderuje: ${t}`);
   }
+});
+
+// ---------------------------------------------------------------- zwroty, terminy, faktury z KSeF w limicie
+
+test('ewidencja: przy zwrocie podpowiedź o dacie dokumentu korekty i pole „dotyczy sprzedaży z dnia”', () => {
+  const html = czytaj(join(PUBLIC, 'index.html'));
+  assert.match(html, /<p id="f-data-zwrot" class="podpowiedz" hidden>Podaj datę dokumentu korekty \(faktury korygującej albo innego dokumentu, np\. potwierdzenia zwrotu pieniędzy\), a nie datę sprzedaży\.<\/p>/);
+  assert.match(html, /<input id="f-data"[^>]*aria-describedby="f-data-zwrot">/);
+  assert.match(html, /<label for="f-dotyczy">Zwrot dotyczy sprzedaży z dnia/);
+  assert.match(html, /<p id="stan-zwroty" class="podpowiedz ostrzezenie-tekst" hidden><\/p>/);
+  const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  assert.match(kod, /dotyczy: zwrotWFormularzu\(\) \? \$\('f-dotyczy'\)\.value : ''/);
+  assert.match(html, /Ta data służy tylko do ostrzeżenia i nie trafia do pliku CSV ani XLSX\./);
+  assert.match(kod, /akapitDopisku\(h\.przekroczenie\.termin\)/, 'dopisek o dniu wolnym przy terminie CEIDG');
+  // Fakt przekroczenia nie ukrywa prognozy z planu (ramka składa części zamiast wybierać jedną).
+  const fn = kod.slice(kod.indexOf('function renderujPrzekroczenie()'), kod.indexOf('\n}\n', kod.indexOf('function renderujPrzekroczenie()')));
+  assert.match(fn, /if \(h\) \{\n\s+czesci\.push\(/);
+  assert.match(fn, /\n {2}if \(p\?\.przekroczenie\?\.prognoza && p\.przyczynaPrzekroczenia === 'plan'\) \{/, 'prognoza sprawdzana także po fakcie');
+});
+
+test('faktura: daty wpłat z podpowiedzią, opis pola innych faktur (także z KSeF), komunikat o KSeF i NIP od 2027 r.', () => {
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
+  assert.match(html, /<legend>Kiedy klient zapłacił <span class="opcjonalne">\(nieobowiązkowe\)<\/span><\/legend>/);
+  assert.match(html, /<p id="zaplaty-info" class="podpowiedz">Jeśli klient zapłacił później niż w miesiącu sprzedaży, podaj datę zapłaty, bo termin na żądanie może być dłuższy\.<\/p>/);
+  assert.match(html, /<label for="f-inne">Faktury dla firm wystawione w tym miesiącu gdzie indziej, w KSeF i poza nim <span class="opcjonalne">\(zł\)<\/span><\/label>/);
+  assert.match(html, /<p id="inne-zakres" class="podpowiedz">Bez faktur z kasy fiskalnej i bez faktur dla osób prywatnych\.<\/p>/);
+  assert.match(html, /<p id="inne-info" class="podpowiedz">Przepis mówi o fakturach wystawionych poza KSeF\. Liczymy też faktury z KSeF, żeby nie zaniżyć sumy\.<\/p>/);
+  const blokada = html.slice(html.indexOf('id="ksef-blokada"'), html.indexOf('</div>', html.indexOf('id="ksef-blokada"')));
+  assert.match(blokada, /Faktura w KSeF wymaga Twojego NIP\./, 'ramka blokady (także ksef-2027) mówi o NIP');
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
+  assert.match(kod, /terminy\(ds, \$\('f-data-zadania'\)\.value, zaplaty\)/);
+  assert.match(kod, /stan\.faktury = bezFaktury\(stan\.faktury, f\.id\)/, 'usuwanie po identyfikatorze');
+  assert.ok(!/x\.numer !== f\.numer/.test(kod));
+  const utrwal = kod.slice(kod.indexOf('function utrwal()'), kod.indexOf('\n}\n', kod.indexOf('function utrwal()')));
+  assert.match(utrwal, /if \(stan\.pamietajDane\) magazyn\.zapiszDaneFaktur\(/, 'dane sprzedawcy i klientów tylko po włączeniu');
+});
+
+test('CSP: \'self\' w connect-src zostaje, bo eksport XLSX pobiera wzór arkusza z tej samej strony', () => {
+  assert.match(czytaj(join(PUBLIC, 'js/ewidencja-widok.js')), /fetch\('\/pobierz\/arkusz-limit-dn\.xlsx'/);
+  assert.match(cspNaglowek, /; connect-src 'self' https:\/\/api\.nbp\.pl; /);
+});
+
+test('test dostępności: serwer zamykany w finally i po SIGINT/SIGTERM, wymóg Node 22.12, skan stanów poziom-* ewidencji', () => {
+  const skrypt = czytaj(fileURLToPath(new URL('../scripts/sprawdz-dostepnosc.mjs', import.meta.url)));
+  assert.match(skrypt, /for \(const \[sygnal, kod\] of \[\['SIGINT', 130\], \['SIGTERM', 143\]\]\) \{\n\s+process\.on\(sygnal, /);
+  assert.match(skrypt, /\} finally \{\n\s+await zamknij\(\);/);
+  assert.ok(skrypt.indexOf('chromium.launch(') > skrypt.indexOf('try {'), 'start przeglądarki w try');
+  for (const k of ['poziom-ok', 'poziom-70', 'poziom-85', 'poziom-95', 'poziom-100']) assert.ok(skrypt.includes(`'${k}'`), k);
+  const readme = czytaj(fileURLToPath(new URL('../README.md', import.meta.url)));
+  assert.match(readme, /Node ≥ 22\.12/);
+});
+
+test('dane osobowe tylko za zgodą: „Drukuj” tylko dla pełnej faktury, wybór po migracji, imię do wydruku pod drugim przełącznikiem', () => {
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
+  assert.match(kod, /pelnaFaktura\(f\) \? el\('button', \{ type: 'button', klasa: 'drugorzedny maly', tekst: 'Drukuj'/);
+  assert.ok(!/Array\.isArray\(f\.pozycje\); \} catch/.test(kod), 'wczytanie przyjmuje rekord skrócony');
+  for (const plik of ['js/faktura-widok.js', 'js/ewidencja-widok.js']) {
+    const k = czytaj(join(PUBLIC, plik));
+    assert.match(k, /\$\('pamietaj-dane-migracja'\)\.hidden = !\(stan\.dostepna && d(ane)?\.czekaNaWybor\);/, plik);
+    assert.match(k, /addEventListener\('click', (zachowajDaneZWczesniejszej|\(\) => \{\n\s+magazyn\.zachowajDaneFaktur\(\);)/, plik);
+    const fn = k.slice(k.indexOf('async function usunDaneZWczesniejszej()'), k.indexOf('\n}\n', k.indexOf('async function usunDaneZWczesniejszej()')));
+    assert.ok(fn.indexOf('await zapytaj(') >= 0 && fn.indexOf('await zapytaj(') < fn.indexOf('magazyn.usunDaneFaktur()'), `${plik}: „Usuń” z potwierdzeniem`);
+  }
+  const ew = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
+  assert.match(ew, /if \(stan\.dostepna && magazyn\.pamiecDanychWlaczona\(\)\) magazyn\.zmienUstawienia\(\{ osoba:/);
+  assert.ok(!/zmienUstawienia\(\{ pamietaj: true, osoba/.test(ew), 'imię do wydruku nie zapisuje się pod pierwszym przełącznikiem');
 });

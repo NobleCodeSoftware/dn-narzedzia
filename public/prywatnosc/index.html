@@ -29,7 +29,7 @@
   </header>
   <main class="wrap">
     <h1>Polityka prywatności</h1>
-    <p class="muted">Wersja 0.5, obowiązuje od dnia publikacji na stronie.</p>
+    <p class="muted">Wersja 0.6, obowiązuje od dnia publikacji na stronie.</p>
 
     <h2>Kto jest administratorem</h2>
     <p>NobleCode Krzysztof Mizgała, e-mail: <a href="mailto:kontakt@noblecode.pl">kontakt@noblecode.pl</a>. Adres do korespondencji udostępniamy na prośbę wysłaną e-mailem.</p>
@@ -39,9 +39,29 @@
       pliki nie trafiają do nas ani do osób trzecich. Nie tworzymy kont, nie używamy ciasteczek, analityki ani skryptów śledzących.</p>
 
     <h2>Pamięć przeglądarki</h2>
-    <p>Strona zapisuje wpisy, wystawione faktury, Twoje dane z faktury, dane klientów, ustawienie pamięci i nieobowiązkowe
-      imię do wydruku w pamięci przeglądarki (localStorage), żeby nie znikały po zamknięciu strony. Po wyłączeniu opcji „Pamiętaj wpisy w tej przeglądarce” zostaje
-      zapamiętane tylko to ustawienie, a przycisk „Wyczyść dane” usuwa wszystko.</p>
+    <p>Strona zapisuje dane w pamięci Twojej przeglądarki (localStorage), żeby nie znikały po zamknięciu strony. Każdy zapis ma znacznik czasu zapisu.</p>
+    <p>Domyślnie, przy włączonej opcji „Pamiętaj wpisy ewidencji”, zapisuje się tylko to, co nie wskazuje osób:</p>
+    <ul>
+      <li>Wpisy ewidencji (dn-ewidencja-v1).</li>
+      <li>Wystawione faktury w skrócie: numer, daty, kwota i to, czy klient jest firmą, oraz datę utraty prawa do faktur poza KSeF (dn-faktury-v1).</li>
+      <li>Ustawienia pamięci (dn-ewidencja-ustawienia-v1).</li>
+    </ul>
+    <p>Dane osobowe zapisują się tylko po włączeniu opcji „Zapamiętaj moje dane i dane klientów do faktur”:</p>
+    <ul>
+      <li>Twoje dane do faktur, w tym PESEL lub NIP, oraz dane klientów (dn-dane-faktur-v1).</li>
+      <li>Pełne faktury z danymi Twoimi i klientów, do ponownego wydruku (dn-faktury-v1).</li>
+      <li>Nieobowiązkowe imię do wydruku ewidencji (dn-ewidencja-ustawienia-v1).</li>
+    </ul>
+    <p>Jeśli wcześniejsza wersja strony zapisała już Twoje dane, strona zapyta, czy je zachować. Do Twojej decyzji zostają bez zmian, a nowe nie są zapisywane.</p>
+    <p>Przy starcie strona sprawdza, czy pamięć działa, próbnym kluczem dn-test, który od razu usuwa.</p>
+    <p>Te dane nie są wysyłane do nas. Nie mamy do nich dostępu, więc nie możemy ich odzyskać ani usunąć.</p>
+    <p>Zapis jest potrzebny do działania funkcji, z której korzystasz (art. 399 ust. 3 pkt 2 ustawy Prawo komunikacji elektronicznej). Dane osobowe do faktur strona zapamiętuje tylko po włączeniu tej opcji.</p>
+    <p>Jeśli wpisujesz dane klientów, przetwarzasz je jako ich administrator i odpowiadasz za ich ochronę.</p>
+    <p>Na wspólnym komputerze albo we wspólnym profilu przeglądarki nie włączaj opcji „Zapamiętaj moje dane i dane klientów do faktur”. Wpisy i skrócone faktury zobaczy każdy, więc po pracy użyj „Wyczyść dane” albo wyłącz „Pamiętaj wpisy ewidencji”.</p>
+    <p>Wyłączenie opcji „Pamiętaj wpisy ewidencji” usuwa wpisy, zapisane faktury i datę utraty prawa (dn-ewidencja-v1 i dn-faktury-v1). Zostają ustawienia oraz Twoje dane i dane klientów (dn-dane-faktur-v1), jeśli je zapamiętujesz.</p>
+    <p>Wyłączenie opcji „Zapamiętaj moje dane i dane klientów do faktur” usuwa dn-dane-faktur-v1, imię do wydruku i dane osobowe z zapisanych faktur. Zostają wpisy, numery, daty i kwoty faktur oraz ustawienia.</p>
+    <p>Przycisk „Wyczyść dane” w ewidencji usuwa wszystko, także ustawienia. Możesz też usunąć dane tej strony w ustawieniach przeglądarki.</p>
+    <p>Dane są przechowywane, dopóki nie usuniesz ich Ty albo przeglądarka.</p>
 
     <h2>Kurs NBP</h2>
     <p>Przy sprzedaży w walucie obcej przeglądarka pobiera kurs średni z <a href="https://api.nbp.pl/">api.nbp.pl</a>

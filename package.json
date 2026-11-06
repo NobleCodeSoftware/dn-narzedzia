@@ -1,6 +1,6 @@
 {
   "name": "dn-narzedzia",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Narzędziownik DN: licznik limitu, ewidencja sprzedaży w przeglądarce (prognoza, kurs NBP, wydruk), faktura bez VAT (zwolnienie) w PDF i darmowy arkusz XLSX.",
   "license": "MIT",
@@ -10,6 +10,11 @@
     "test": "node --test",
     "serve": "python3 -m http.server 8080 --directory public",
     "check:publish": "node scripts/sprawdz-publikacje.mjs",
-    "arkusz": "python3 scripts/arkusz.py --sprawdz"
+    "arkusz": "python3 scripts/arkusz.py --sprawdz",
+    "test:a11y": "node scripts/sprawdz-dostepnosc.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "playwright-core": "1.56.1"
   }
 }

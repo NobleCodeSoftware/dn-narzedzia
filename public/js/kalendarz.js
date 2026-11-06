@@ -93,3 +93,14 @@ export function dzienKursu(dataSprzedazy) {
   }
   throw new BladDanych('nie znaleziono dnia roboczego'); // niemożliwe przy polskim kalendarzu
 }
+
+/** Najbliższy dzień roboczy od podanej daty włącznie (ta sama data, gdy jest dniem roboczym). */
+export function najblizszyDzienRoboczy(data) {
+  if (!poprawnaData(data)) throw new BladDanych(`niepoprawna data ${JSON.stringify(data)}`);
+  let d = data;
+  for (let i = 0; i < 14; i += 1) {
+    if (czyDzienRoboczy(d)) return d;
+    d = dodajDni(d, 1);
+  }
+  throw new BladDanych('nie znaleziono dnia roboczego'); // niemożliwe przy polskim kalendarzu
+}
