@@ -8,7 +8,7 @@ import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, nipZKreskami, dataPl, MAX_POZYCJI,
   MAX_KWOTA_GR, BladPola, lukaWNumeracji, polaczUtrate, skrotKsef, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU, polaczFaktury,
-  nadajIdFakturom, bezFaktury, opisTerminu, MAX_ZAPLAT,
+  nadajIdFakturom, bezFaktury, opisTerminu, MAX_ZAPLAT, kwotaInnychGr,
 } from './faktura-logika.js';
 import * as magazyn from './magazyn.js';
 
@@ -278,8 +278,17 @@ function sumaPodgladu(pozycje) {
   return s;
 }
 
-function inneGr() {
-  try { const g = naGrosze($('f-inne').value.trim().replace(/\s/g, '').replace(/zł$/i, '') || '0'); return g > 0n ? g : 0n; } catch { return 0n; }
+/**
+ * Kwota z pola „Faktury dla firm wystawione gdzie indziej”: { gr, blad }. Zapisu, którego nie da się odczytać, nie liczymy
+ * jako 0 zł (to zaniżyłoby sumę limitu): blad ma komunikat, a wystawienie faktury dla firmy jest zablokowane do poprawki.
+ */
+function inne() {
+  try {
+    return { gr: kwotaInnychGr($('f-inne').value), blad: '' };
+  } catch (e) {
+    if (!(e instanceof BladDanych)) throw e;
+    return { gr: 0n, blad: e.message };
+  }
 }
 
 function regula(v, kwotaGr) {
@@ -290,7 +299,7 @@ function regula(v, kwotaGr) {
     kwotaGr,
     faktury: stan.faktury,
     numer: v.numer.trim(),
-    inneGr: inneGr(),
+    inneGr: inne().gr,
     przekroczonoWczesniej: $('f-przekroczony').checked,
     utrataOd: stan.utrataOd,
   });
@@ -338,16 +347,26 @@ function odswiez() {
   $('razem-slownie').textContent = suma > 0n && suma <= MAX_KWOTA_GR ? `Słownie: ${slownie(suma)}` : '';
   const r = regula(v, suma);
   const blokada = r.stan === 'blokada';
+  // Błędna kwota w polu „inne faktury”: przy sumie w limicie nie wiadomo, czy limit nie jest przekroczony, więc nie
+  // pokazujemy zapasu i nie wystawiamy (gdy limit jest przekroczony już bez tej kwoty, wynik się nie zmienia).
+  const { blad: bladInnych } = inne();
+  const bezSumy = Boolean(bladInnych) && v.nabywca.rodzaj === 'firma' && r.powod === 'w-limicie';
+  $('inne-blad').textContent = bladInnych;
+  $('inne-blad').hidden = !bladInnych;
+  if (bladInnych) $('f-inne').setAttribute('aria-invalid', 'true');
+  else $('f-inne').removeAttribute('aria-invalid');
   $('ksef-blokada').hidden = !blokada;
   $('ksef-ok').hidden = blokada;
-  $(blokada ? 'ksef-blokada-tekst' : 'ksef-ok-tekst').textContent = opisKsef(r);
-  $('ksef-ok').className = `ramka ${r.powod === 'w-limicie' && r.zapasGr < 200000n ? 'uwaga-ramka' : ''}`;
+  if (bezSumy) $('ksef-ok-tekst').textContent = `${bladInnych} Bez tej kwoty nie policzymy limitu 10 000 zł.`;
+  else $(blokada ? 'ksef-blokada-tekst' : 'ksef-ok-tekst').textContent = opisKsef(r);
+  $('ksef-ok').className = `ramka ${bezSumy || (r.powod === 'w-limicie' && r.zapasGr < 200000n) ? 'uwaga-ramka' : ''}`;
   $('wystaw').textContent = blokada ? 'Tej faktury nie wystawisz tutaj' : 'Wystaw i drukuj fakturę';
-  $('wystaw').setAttribute('aria-disabled', String(blokada));
+  $('wystaw').setAttribute('aria-disabled', String(blokada || bezSumy));
   // Krótki stan KSeF dla firmy pod „Kto kupuje”, widoczny także przy wyborze osoby prywatnej.
   const rf = v.nabywca.rodzaj === 'firma' ? r : regula({ ...v, nabywca: { ...v.nabywca, rodzaj: 'firma' } }, suma);
-  $('ksef-skrot').textContent = skrotKsef(rf);
-  $('ksef-skrot').className = `podpowiedz status-tekst ${rf.stan === 'blokada' ? 'poziom-95' : 'poziom-ok'}`;
+  const skrotBezSumy = Boolean(bladInnych) && rf.powod === 'w-limicie';
+  $('ksef-skrot').textContent = skrotBezSumy ? 'Firma: popraw kwotę faktur wystawionych gdzie indziej.' : skrotKsef(rf);
+  $('ksef-skrot').className = `podpowiedz status-tekst ${rf.stan === 'blokada' || skrotBezSumy ? 'poziom-95' : 'poziom-ok'}`;
   // Bez pamięci przeglądarki licznik limitu widzi tylko faktury z tej wizyty: mówimy to wprost.
   $('ksef-pamiec').hidden = !(v.nabywca.rodzaj === 'firma' && !stan.pamietaj && ['w-limicie', 'limit'].includes(r.powod));
   $('f-przekroczony').checked = $('f-przekroczony').checked || Boolean(stan.utrataOd);
@@ -371,7 +390,7 @@ function pokazBlad(tekst, pole) {
     const mapa = {
       dataWystawienia: 'f-data-sprzedazy', dataSprzedazy: 'f-data-sprzedazy', numer: 'f-numer', sprzedawcaNazwa: 'f-sprzedawca-nazwa',
       sprzedawcaNip: 'f-sprzedawca-nip', sprzedawcaId: 'f-sprzedawca-nip', sprzedawcaAdres: 'f-sprzedawca-adres', rodzaj: 'rodzaj-konsument', nabywcaNazwa: 'f-nabywca-nazwa', nabywcaAdres: 'f-nabywca-adres',
-      nabywcaNip: 'f-nabywca-nip', podstawaTekst: 'f-podstawa-tekst', pozycje: 'pozycja-0-nazwa',
+      nabywcaNip: 'f-nabywca-nip', podstawaTekst: 'f-podstawa-tekst', pozycje: 'pozycja-0-nazwa', inne: 'f-inne',
     };
     const e = $(mapa[pole] ?? pole);
     if (e) {
@@ -409,6 +428,12 @@ async function wystaw(ev) {
     return;
   }
   const r = regula(f, naGrosze(f.suma));
+  // Faktura dla firmy przy błędnej kwocie innych faktur: nie wiadomo, czy mieści się w limicie, więc nie wystawiamy.
+  const { blad: bladInnych } = inne();
+  if (bladInnych && f.nabywca.rodzaj === 'firma' && r.powod === 'w-limicie') {
+    pokazBlad(bladInnych, 'inne');
+    return;
+  }
   if (r.stan === 'blokada') {
     pokazBlad('');
     if (r.powod === 'limit') {
@@ -469,7 +494,8 @@ function dopiszDoEwidencji(f) {
   for (const w of zapisane?.wpisy ?? []) {
     try { wpisy.push(normalizujWpis(w)); } catch { /* pomijamy uszkodzony wpis */ }
   }
-  const wynik = dodajFaktureDoEwidencji(wpisy, f, noweId());
+  // Nazwa pozycji może zawierać dane klienta: bez pamięci danych do faktur opis wpisu ma tylko numer faktury.
+  const wynik = dodajFaktureDoEwidencji(wpisy, f, noweId(), { zNazwa: magazyn.pamiecDanychWlaczona() });
   if (wynik.stan === 'bez-zmian') return ' Ta sprzedaż już jest w ewidencji.';
   if (!magazyn.zapisz(wynik.wpisy)) return ' Nie udało się zapisać sprzedaży w ewidencji.';
   return {

@@ -20,7 +20,7 @@
 //   a faktura wymaga innych oznaczeń (art. 106e ust. 1 pkt 18 i 24), więc przyjmujemy tylko polski NIP nabywcy.
 
 import { BladDanych, parsujDziesietna, poprawnaData, dodajDni, formatujZl, groszeNaTekst, naGrosze } from './logic.js';
-import { kolejnyNumer, MAX_OPIS } from './ewidencja-logika.js';
+import { kolejnyNumer, MAX_OPIS, tekstLiczby, niejednoznacznaKwota, opisNiejednoznacznejKwoty } from './ewidencja-logika.js';
 
 export const LIMIT_POZA_KSEF_GR = 1_000_000n; // 10 000,00 zł brutto w miesiącu (art. 145m ust. 1)
 export const KSEF_LIMIT_OD = '2026-04-01'; // wcześniej poza KSeF bez limitu (art. 145l)
@@ -162,6 +162,30 @@ function liczbaZPola(v) {
   return /^\d+(\.\d+)?$/.test(t) ? t : null;
 }
 
+/**
+ * Kwota z pola „faktury dla firm wystawione gdzie indziej” (grosze). Puste pole to 0 zł. Przyjmuje zapisy jak formularz
+ * ewidencji: „3000”, „3 000,00 zł”, „3.000,00”, „3,000.00”, „3 000 PLN”. Kwota liczy się do limitu 10 000 zł, więc
+ * zapisu, którego nie da się odczytać jednoznacznie, nie zgadujemy (wariant ostrożny: suma nie może być zaniżona):
+ * „10.000” albo „1,234” (separator tysięcy czy dziesiętny?), tekst, kwota ujemna i ułamki grosza to BladPola('inne').
+ */
+export function kwotaInnychGr(wartosc) {
+  const surowa = String(wartosc ?? '').trim();
+  if (surowa === '') return 0n;
+  if (niejednoznacznaKwota(surowa)) {
+    throw new BladPola('inne', `Faktury wystawione gdzie indziej: ${opisNiejednoznacznejKwoty(surowa)}.`);
+  }
+  // Separator tysięcy tylko w poprawnych grupach po trzy cyfry, a po przecinku albo kropce dziesiętnej najwyżej grosze.
+  const zwarta = surowa.replace(/[\s\u00a0\u202f]/g, '').replace(/(zł|pln)$/i, '');
+  const poprawna = /^\d{1,15}([.,]\d{1,2})?$/.test(zwarta) || /^[1-9]\d{0,2}(\.\d{3}){1,4}(,\d{1,2})?$/.test(zwarta)
+    || /^[1-9]\d{0,2}(,\d{3}){1,4}(\.\d{1,2})?$/.test(zwarta);
+  let t = null;
+  if (poprawna) { try { t = tekstLiczby(zwarta); } catch { t = null; } }
+  if (t === null || (t.split('.')[1] ?? '').length > 2) {
+    throw new BladPola('inne', 'Faktury wystawione gdzie indziej: wpisz kwotę w złotych, np. 3000 albo 3 000,00.');
+  }
+  return naGrosze(t);
+}
+
 // ------------------------------------------------------------ słownie
 
 const JEDNOSCI = ['', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć'];
@@ -215,10 +239,23 @@ export function slownie(gr) {
 /** Pietnasty dzień miesiąca po miesiącu daty 'RRRR-MM-DD'. */
 const pietnastyPo = (data) => dodajDni(koniecMiesiaca(data), 15);
 
-/** Poprawne daty wpłat: bez powtórzeń, rosnąco, najwyżej MAX_ZAPLAT. */
+/**
+ * Poprawne daty wpłat: bez powtórzeń, rosnąco, najwyżej MAX_ZAPLAT. Przy większej liczbie zostaje najwcześniejsza wpłata
+ * (od niej liczy się zaliczka i najwcześniejsza data wystawienia) i najpóźniejsze (od ostatniej liczy się okno żądania).
+ */
 export function normalizujZaplaty(zaplaty) {
   const lista = (Array.isArray(zaplaty) ? zaplaty : []).map((d) => String(d ?? '').trim()).filter(poprawnaData);
-  return [...new Set(lista)].sort().slice(0, MAX_ZAPLAT);
+  const rosnaco = [...new Set(lista)].sort();
+  return rosnaco.length <= MAX_ZAPLAT ? rosnaco : [rosnaco[0], ...rosnaco.slice(-(MAX_ZAPLAT - 1))];
+}
+
+/**
+ * Najwcześniejsza data wystawienia (art. 106i ust. 7): 60 dni przed dostawą albo przed otrzymaniem zapłaty, gdy klient
+ * zapłacił (całość lub część) przed dostawą; liczy się wcześniejsze z tych zdarzeń.
+ */
+export function najwczesniejszeWystawienie(dataSprzedazy, zaplaty = []) {
+  const przed = normalizujZaplaty(zaplaty).filter((d) => d < dataSprzedazy);
+  return dodajDni(przed.length ? przed[0] : dataSprzedazy, -60);
 }
 
 /**
@@ -232,17 +269,22 @@ export function normalizujZaplaty(zaplaty) {
  *   b) żądanie po miesiącu dostawy, ale do końca miesiąca wpłaty po dostawie: przepisy tego nie rozstrzygają, więc
  *      termin to późniejsza z dat (15. dzień miesiąca po dostawie albo dzień żądania) i terminNiejasny: true;
  *   c) w pozostałych przypadkach: 15 dni od żądania;
- * - nie wcześniej niż 60 dni przed sprzedażą (art. 106i ust. 7).
+ * - nie wcześniej niż 60 dni przed dostawą albo przed wcześniejszą od niej wpłatą (art. 106i ust. 7), nigdy po terminie.
  * Bez daty żądania termin jak przy żądaniu w miesiącu dostawy.
  * Zwraca { zadanieDo, termin, przepis, poTerminieZadania, terminNiejasny, najwczesniej, zaplaty }.
  */
 export function terminy(dataSprzedazy, dataZadania = '', zaplaty = []) {
   if (!poprawnaData(dataSprzedazy)) throw new BladDanych('Podaj datę sprzedaży.');
   const wplaty = normalizujZaplaty(zaplaty);
-  const koniec = koniecMiesiaca(dataSprzedazy);
   const okna = [dataSprzedazy, ...wplaty].map((d) => koniecMiesiacaPo(d, 3));
   const zadanieDo = okna.sort().at(-1);
-  const baza = { zadanieDo, poTerminieZadania: false, terminNiejasny: false, najwczesniej: dodajDni(dataSprzedazy, -60), zaplaty: wplaty };
+  const baza = { zadanieDo, poTerminieZadania: false, terminNiejasny: false, najwczesniej: najwczesniejszeWystawienie(dataSprzedazy, wplaty), zaplaty: wplaty };
+  const wynik = wybierzTermin(baza, dataSprzedazy, dataZadania, wplaty, okna);
+  return wynik.termin < wynik.najwczesniej ? { ...wynik, najwczesniej: wynik.termin } : wynik;
+}
+
+function wybierzTermin(baza, dataSprzedazy, dataZadania, wplaty, okna) {
+  const koniec = koniecMiesiaca(dataSprzedazy);
   if (!poprawnaData(dataZadania)) return { ...baza, termin: pietnastyPo(dataSprzedazy), przepis: 'art. 106i ust. 6 pkt 1' };
   const poTerminieZadania = !okna.some((k) => dataZadania <= k);
   const zaliczka = wplaty.find((d) => d < dataSprzedazy && dataZadania <= koniecMiesiaca(d));
@@ -285,11 +327,13 @@ export function normalizujFakture(f, { dzis = '' } = {}) {
   if (!poprawnaData(dataWystawienia)) throw new BladPola('dataWystawienia', 'Podaj datę wystawienia faktury.');
   const dataSprzedazy = String(f?.dataSprzedazy ?? '').trim() || dataWystawienia;
   if (!poprawnaData(dataSprzedazy)) throw new BladPola('dataSprzedazy', 'Podaj datę sprzedaży.');
-  if (dataWystawienia < dodajDni(dataSprzedazy, -60)) {
-    throw new BladPola('dataWystawienia', 'Faktury nie wystawia się wcześniej niż 60 dni przed sprzedażą (art. 106i ust. 7 ustawy o VAT).');
-  }
   const dataZadania = poprawnaData(String(f?.dataZadania ?? '').trim()) ? String(f.dataZadania).trim() : '';
   const zaplaty = normalizujZaplaty(f?.zaplaty);
+  // Art. 106i ust. 7: liczy się dostawa albo zapłata otrzymana przed nią (zaliczka). Wystawienie w terminie jest zawsze możliwe.
+  const { najwczesniej } = terminy(dataSprzedazy, dataZadania, zaplaty);
+  if (dataWystawienia < najwczesniej) {
+    throw new BladPola('dataWystawienia', `Faktury nie wystawia się wcześniej niż 60 dni przed sprzedażą, a gdy klient zapłacił przed nią, 60 dni przed zapłatą (art. 106i ust. 7 ustawy o VAT). Najwcześniej: ${dataPl(najwczesniej)}.`);
+  }
 
   const rok = Number(dataWystawienia.slice(0, 4));
   const numer = String(f?.numer ?? '').replace(/\s+/g, '');
@@ -555,10 +599,15 @@ export function dokumentFaktury(f) {
 const RE_ZNACZNIK = /^Faktura \d+\/\d{4}(?::|$)/;
 const znacznik = (numer) => `Faktura ${numer}`;
 
-/** Wpis ewidencji z faktury: data sprzedaży, kwota brutto w PLN, opis „Faktura N/RRRR: pierwsza pozycja”. */
-export function wpisZFaktury(f, id) {
+/**
+ * Wpis ewidencji z faktury: data sprzedaży, kwota brutto w PLN, opis „Faktura N/RRRR: pierwsza pozycja”.
+ * Z opcją { zNazwa: false } opis to samo „Faktura N/RRRR”: nazwa pozycji może zawierać dane klienta, a przy wyłączonej
+ * pamięci danych do faktur nie zapisujemy jej w przeglądarce także przez ewidencję.
+ */
+export function wpisZFaktury(f, id, { zNazwa = true } = {}) {
   const reszta = f.pozycje.length > 1 ? ` i ${f.pozycje.length - 1} inne` : '';
-  return { id, data: f.dataSprzedazy, opis: `${znacznik(f.numer)}: ${f.pozycje[0].nazwa}${reszta}`.slice(0, MAX_OPIS), kwota: f.suma, waluta: 'PLN', kurs: '', kursData: '', kursTabela: '' };
+  const opis = zNazwa ? `${znacznik(f.numer)}: ${f.pozycje[0].nazwa}${reszta}` : znacznik(f.numer);
+  return { id, data: f.dataSprzedazy, opis: opis.slice(0, MAX_OPIS), kwota: f.suma, waluta: 'PLN', kurs: '', kursData: '', kursTabela: '' };
 }
 
 /**
@@ -566,9 +615,9 @@ export function wpisZFaktury(f, id) {
  * - wpis z opisem „Faktura N/RRRR…” już jest → aktualizuje datę i kwotę ('zaktualizowano' albo 'bez-zmian');
  * - jest wpis bez numeru faktury z tą samą datą i kwotą w PLN → dopisuje numer do jego opisu ('polaczono');
  * - inaczej dodaje nowy wpis ('dodano').
- * Zwraca { wpisy, stan, wpis }.
+ * Opcja { zNazwa } jak w wpisZFaktury. Zwraca { wpisy, stan, wpis }.
  */
-export function dodajFaktureDoEwidencji(wpisy, f, noweId) {
+export function dodajFaktureDoEwidencji(wpisy, f, noweId, { zNazwa = true } = {}) {
   const tag = znacznik(f.numer);
   const kwota = naGrosze(f.suma);
   const zTagiem = wpisy.find((w) => w.opis === tag || w.opis.startsWith(`${tag}:`));
@@ -581,10 +630,11 @@ export function dodajFaktureDoEwidencji(wpisy, f, noweId) {
   }
   const taSama = wpisy.find((w) => w.data === f.dataSprzedazy && w.waluta === 'PLN' && naGrosze(w.kwota) === kwota && !RE_ZNACZNIK.test(w.opis));
   if (taSama) {
-    const nowy = { ...taSama, opis: `${tag}: ${taSama.opis || f.pozycje[0].nazwa}`.slice(0, MAX_OPIS) };
+    const opis = taSama.opis || (zNazwa ? f.pozycje[0].nazwa : '');
+    const nowy = { ...taSama, opis: (opis ? `${tag}: ${opis}` : tag).slice(0, MAX_OPIS) };
     return { wpisy: wpisy.map((w) => (w === taSama ? nowy : w)), stan: 'polaczono', wpis: nowy };
   }
-  const nowy = wpisZFaktury(f, noweId);
+  const nowy = wpisZFaktury(f, noweId, { zNazwa });
   return { wpisy: [...wpisy, nowy], stan: 'dodano', wpis: nowy };
 }
 

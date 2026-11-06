@@ -7,7 +7,7 @@ Bez kont i bez serwera aplikacji: wszystko działa w przeglądarce.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.4.2. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
+Wersja 0.4.3. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
@@ -53,12 +53,14 @@ do art. 14 ust. 1m ustawy o PIT, bo przepisy o limicie tego nie rozstrzygają.
 
 - **Przekroczenie się nie cofa** (art. 5 ust. 3 ustawy Prawo przedsiębiorców): gdy suma narastająco przekroczy limit dnia
   D, kwartał do końca ma stan „przekroczony od D” i termin D + 7 dni, także gdy późniejsze zwroty obniżą sumę poniżej limitu
-  (`statusKwartalu()`).
+  (`statusKwartalu()`). Tak samo kolumna „Ostrzeżenie” w eksporcie CSV i XLSX: od dnia przekroczenia do końca kwartału
+  ma „Limit przekroczony” (`wartosciArkusza()`).
 - **Ostrzeżenie** (`ostrzezeniaZwrotow()`): gdy bez zwrotu limit jego kwartału byłby przekroczony (albo przekroczony
   wcześniej) i gdy zwrot oznaczono jako dotyczący sprzedaży z wcześniejszego kwartału (nieobowiązkowe pole „Zwrot dotyczy
   sprzedaży z dnia”). Pole służy tylko do ostrzeżenia i niczego nie przelicza w innym kwartale. Zdanie „Bez niego limit
   byłby przekroczony dnia …” pojawia się tylko wtedy, gdy to prawda.
-- Kwartał z samymi zwrotami ma 0% i pusty pasek; nadwyżka zwrotów nie przechodzi do innego kwartału.
+- Kwartał z samymi zwrotami ma 0% i pusty pasek, także w kolumnie „% limitu” eksportu; nadwyżka zwrotów nie przechodzi
+  do innego kwartału.
 - Termin wniosku do CEIDG to D + 7 dni kalendarzowych, bez przesunięcia. Gdy wypada w sobotę, niedzielę albo święto,
   strona dopisuje najbliższy dzień roboczy z zastrzeżeniem, że przepisy tego nie przesądzają (`dopisekTerminu()`).
 
@@ -90,6 +92,9 @@ albo 1,234 zł; formularz pokazuje wtedy komunikat.
 Eksport wypełnia kolumny A–E wzoru `/pobierz/arkusz-limit-dn.xlsx` i zapisuje wyliczone wartości F–I (formuły zostają),
 pozostałe zakładki zostają bez zmian. Przy ponad 1000 wpisach eksport rozszerza zakresy formuł. Wyeksportowany plik
 sprawdzono w LibreOffice (headless): otwiera się, a przeliczone wartości są zgodne.
+Wyjątek: formuły wzoru w kolumnach H i I liczą z bieżącej sumy kwartału, więc po przeliczeniu w programie arkuszowym
+wiersz zwrotu po przekroczeniu może pokazać stan poniżej limitu, a kwartał z samymi zwrotami ujemny procent. Zapisane
+wartości (i CSV) pokazują stan jak na stronie.
 
 ### Faktura bez VAT (zwolnienie)
 
@@ -116,7 +121,9 @@ wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b
   w miesiącu dostawy: 15. dzień miesiąca po dostawie; żądanie później, ale do końca miesiąca wpłaty po dostawie: przepisy
   tego nie rozstrzygają, więc strona podaje późniejszą z dat (15. dzień po dostawie albo dzień żądania) i prosi o wystawienie
   niezwłocznie; w pozostałych przypadkach 15 dni od żądania. Bez daty zapłaty liczy jak przy samej dostawie i podpowiada,
-  kiedy ją podać. Data wystawienia to zawsze dzisiejsza data (art. 106e ust. 1 pkt 1), także dlatego, że od niej zależy
+  kiedy ją podać. Najwcześniej fakturę wystawia się 60 dni przed dostawą, a gdy klient zapłacił (także część) przed
+  dostawą, 60 dni przed tą zapłatą (art. 106i ust. 7); ta granica nigdy nie wypada po terminie wystawienia. Przy większej
+  liczbie wpłat niż pól formularza liczą się najwcześniejsza i najpóźniejsze. Data wystawienia to zawsze dzisiejsza data (art. 106e ust. 1 pkt 1), także dlatego, że od niej zależy
   reguła KSeF.
 - **KSeF i nabywca-firma** (`regulaKsef()`): art. 106ga ust. 1, art. 145l i **art. 145m**. Do 31.03.2026 faktury mogły
   być poza KSeF bez limitu. Od 1.04 do 31.12.2026 poza KSeF tylko wtedy, gdy faktury dla firm wystawione w miesiącu mają
@@ -126,7 +133,10 @@ wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b
   liczy faktury dla firm z tego miesiąca zapisane w przeglądarce, kwotę faktur dla firm wystawionych gdzie indziej i tę
   fakturę. Przepis mówi o fakturach wystawionych poza KSeF, ale strona przyjmuje wariant ostrożny: w polu „inne faktury”
   wpisuje się faktury dla firm z tego miesiąca **w KSeF i poza nim** (bez faktur z kasy fiskalnej i dla osób prywatnych),
-  żeby nie zaniżyć sumy. Suma równa 10 000,00 zł mieści się w limicie, 10 000,01 zł już nie.
+  żeby nie zaniżyć sumy. Suma równa 10 000,00 zł mieści się w limicie, 10 000,01 zł już nie. Pole przyjmuje zapisy
+  jak ewidencja („3000”, „3 000,00 zł”, „3.000,00”, „3,000.00”, `kwotaInnychGr()`). Zapisu niejednoznacznego („10.000”)
+  albo błędnego strona nie liczy jako 0 zł: pokazuje błąd pola i nie wystawia faktury dla firmy, dopóki nie zostanie
+  poprawiony.
   Po potwierdzeniu, że faktura przekraczająca limit idzie do KSeF (albo po zaznaczeniu wcześniejszego przekroczenia),
   zapamiętuje miesiąc utraty prawa; pomyłkę można cofnąć z potwierdzeniem. **Od 1.01.2027 każda faktura dla firmy jest
   zablokowana** z odesłaniem do [ksef.podatki.gov.pl](https://ksef.podatki.gov.pl/).
@@ -135,7 +145,8 @@ wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b
   od 2027 r., i nie wliczają się do limitu.
 - **Ewidencja bez dublowania** (`dodajFaktureDoEwidencji()`): wpis z opisem „Faktura N/RRRR: …” jest aktualizowany, wpis
   bez numeru faktury z tą samą datą sprzedaży i kwotą w PLN dostaje numer w opisie, w pozostałych przypadkach powstaje
-  nowy wpis.
+  nowy wpis. Gdy pamięć danych do faktur jest wyłączona, opis wpisu to samo „Faktura N/RRRR”, bez nazwy pozycji (może
+  zawierać dane klienta).
 - **Ograniczenia:** reguły opierają się na zegarze systemowym i danych przeglądarki użytkownika, więc ich zmiana omija
   te reguły, a za zgodność faktury z przepisami odpowiada wystawca. Bez pamięci przeglądarki licznik limitu zna tylko
   faktury z bieżącej wizyty. Tylko PLN; faktury korygujące, zaliczkowe i w walucie obcej są poza zakresem (data zaliczki

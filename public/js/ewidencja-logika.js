@@ -406,20 +406,28 @@ function drabinka(sumaGr, limitGr) {
 }
 
 /**
- * Wartości kolumn F–I arkusza dla posortowanych wpisów, tak jak liczą je formuły arkusza:
- * F kwota w PLN albo „brak kursu”, G suma kwartału do tej daty włącznie, H ułamek limitu, I ostrzeżenie.
+ * Wartości kolumn F–I arkusza dla posortowanych wpisów (eksport CSV i XLSX):
+ * F kwota w PLN albo „brak kursu”, G suma kwartału do tej daty włącznie, H ułamek limitu (nie mniej niż 0, jak procent
+ * na ekranie), I ostrzeżenie. Przekroczenie się nie cofa (statusKwartalu): gdy suma kwartału do którejś wcześniejszej
+ * daty przekroczyła limit, I = „Limit przekroczony” do końca kwartału, także gdy zwroty obniżą sumę.
  */
 export function wartosciArkusza(posortowane) {
   const pln = posortowane.map(kwotaPlnGr);
-  return posortowane.map((w, i) => {
-    if (pln[i] === null) return { F: 'brak kursu', G: '', H: '', I: 'Wpisz kurs NBP w kolumnie E' };
+  const sumy = posortowane.map((w, i) => {
+    if (pln[i] === null) return null;
     const { rok, q } = kwartal(w.data);
     const { od } = granicaKwartalu(rok, q);
     let G = 0n;
     posortowane.forEach((x, j) => { if (pln[j] !== null && x.data >= od && x.data <= w.data) G += pln[j]; });
+    return { od, rok, G };
+  });
+  return posortowane.map((w, i) => {
+    if (sumy[i] === null) return { F: 'brak kursu', G: '', H: '', I: 'Wpisz kurs NBP w kolumnie E' };
+    const { od, rok, G } = sumy[i];
     const limitGr = PLACA_MINIMALNA[rok] === undefined ? null : limitDlaRoku(rok);
     if (limitGr === null) return { F: pln[i], G, H: 'brak limitu', I: 'Wpisz płacę minimalną na ten rok w zakładce Limity' };
-    return { F: pln[i], G, H: Number(G) / Number(limitGr), I: drabinka(G, limitGr) };
+    const przekroczonyWczesniej = sumy.some((s, j) => s !== null && s.od === od && posortowane[j].data <= w.data && s.G > limitGr);
+    return { F: pln[i], G, H: G > 0n ? Number(G) / Number(limitGr) : 0, I: przekroczonyWczesniej ? 'Limit przekroczony' : drabinka(G, limitGr) };
   });
 }
 

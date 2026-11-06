@@ -1,6 +1,6 @@
 {
   "name": "dn-narzedzia",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "Narzędziownik DN: licznik limitu, ewidencja sprzedaży w przeglądarce (prognoza, kurs NBP, wydruk), faktura bez VAT (zwolnienie) w PDF i darmowy arkusz XLSX.",
   "license": "MIT",

@@ -539,3 +539,96 @@ test('łączenie wpisów z tym samym id: wygrywa później zmieniona wersja, bez
   assert.deepEqual(polaczWpisy([bezZnacznika], [stary]).map((x) => x.kwota), ['10'], 'zmieniona w formularzu wygrywa z wpisem bez znacznika');
   assert.equal(normalizujWpis({ id: 'x', data: '2026-10-01', kwota: '1', zmieniono: 'wczoraj' }).zmieniono, undefined);
 });
+
+// ---------------------------------------------------------------- przypadki brzegowe kwartału i eksportu
+
+test('termin CEIDG na Nowy Rok: termin bez przesunięcia i dopisek z 04.01.2027', async () => {
+  const { dopisekTerminu } = await import('../public/js/wspolne.js');
+  const kw = historiaKwartalow([w('2026-10-10', '9000'), w('2026-12-25', '2000')], '2027-01-05').find((k) => k.klucz === '2026-4');
+  assert.deepEqual(kw.przekroczenie, { data: '2026-12-25', termin: '2027-01-01' });
+  const dopisek = dopisekTerminu(kw.przekroczenie.termin);
+  assert.match(dopisek, /przesunąć się na 04\.01\.2027/);
+  assert.match(dopisek, /do 01\.01\.2027/);
+});
+
+test('zwrot w styczniu do przekroczonego grudnia: IV kwartał zostaje przekroczony, I kwartał ma 0% i ostrzeżenie', () => {
+  const wpisy = [w('2026-11-10', '6000'), w('2026-12-28', '5000'),
+    normalizujWpis({ id: 'zs', data: '2027-01-04', kwota: '-500', dotyczy: '2026-12-28' })];
+  const h = historiaKwartalow(wpisy, '2027-01-10');
+  const iv = h.find((k) => k.klucz === '2026-4');
+  const i = h.find((k) => k.klucz === '2027-1');
+  assert.ok(iv.status.przekroczony);
+  assert.equal(iv.status.przekroczonyOd, '2026-12-28');
+  assert.equal(iv.przekroczenie.termin, '2027-01-04');
+  assert.deepEqual(iv.ostrzezenia, []);
+  assert.equal(i.sumaGr, -50000n);
+  assert.equal(i.status.procent, 0);
+  assert.equal(i.status.przekroczony, false);
+  assert.equal(i.ostrzezenia.length, 1);
+  assert.equal(i.ostrzezenia[0].przyczyna, 'inny-kwartal');
+  assert.equal(i.ostrzezenia[0].bezZwrotuPrzekroczenie, null);
+});
+
+test('prognoza w lutym: 59 dni od początku kwartału, próg 70% 19.03.2027', () => {
+  const p = prognoza([w('2027-01-15', '5900')], '2027-02-28');
+  assert.equal(p.dniMinelo, 59);
+  assert.equal(p.dniZostalo, 31);
+  assert.equal(p.tempoDzienneGr, 10000n);
+  assert.equal(p.sumaNaKoniecGr, 900000n);
+  const dzien = (prog) => p.progi.find((x) => x.prog === prog).prognozaDnia;
+  assert.equal(dzien('0.70'), '2027-03-19');
+  for (const prog of ['0.85', '0.95', '1.00', 'przekroczenie']) assert.equal(dzien(prog), null, prog);
+  assert.equal(p.pewnosc, 'mala');
+});
+
+test('zwrot po przekroczeniu do sumy równej limitowi: stan przekroczony na ekranie i w kolumnie ostrzeżenia', () => {
+  const wpisy = [w('2026-10-05', '6000'), w('2026-10-20', '5000'), w('2026-11-03', '-186,50')];
+  const kw = historiaKwartalow(wpisy, '2026-11-05').find((k) => k.klucz === '2026-4');
+  assert.equal(kw.sumaGr, 1081350n);
+  assert.equal(kw.status.przekroczonyOd, '2026-10-20');
+  assert.equal(kw.przekroczenie.termin, '2026-10-27');
+  assert.deepEqual(kw.ostrzezenia, []);
+  const p = prognoza(wpisy, '2026-11-05');
+  assert.equal(p.status.przekroczonyOd, '2026-10-20');
+  assert.deepEqual(p.ostrzezenia, []);
+  const v = wartosciArkusza(posortuj(wpisy));
+  assert.equal(v[1].I, 'Limit przekroczony');
+  assert.equal(v[2].G, 1081350n);
+  assert.equal(v[2].I, 'Limit przekroczony');
+});
+
+test('kolumna ostrzeżenia: przekroczenie się nie cofa do końca kwartału, a nowy kwartał liczy się od zera', () => {
+  const wpisy = [w('2026-10-05', '6000'), w('2026-10-20', '5000'), w('2026-11-03', '-3000'), w('2026-12-01', '100'),
+    w('2027-01-04', '100')];
+  const v = wartosciArkusza(posortuj(wpisy));
+  assert.deepEqual(v.map((x) => x.I), ['W limicie', 'Limit przekroczony', 'Limit przekroczony', 'Limit przekroczony', 'W limicie']);
+  const csv = parsujCsv(eksportujCsv(wpisy));
+  assert.deepEqual(csv.slice(1).map((r) => r[8]), v.map((x) => x.I));
+});
+
+test('eksport: kwartał z samymi zwrotami ma 0% limitu, nie ujemny procent', () => {
+  const wpisy = [w('2027-01-10', '-85')];
+  const v = wartosciArkusza(wpisy);
+  assert.equal(v[0].G, -8500n);
+  assert.equal(v[0].H, 0);
+  assert.equal(v[0].I, 'W limicie');
+  assert.equal(parsujCsv(eksportujCsv(wpisy))[1][7], '0,0%');
+});
+
+test('zwrot przed przekroczeniem: suma równa limitowi bez przekroczenia, ostrzeżenie i prognoza z tempa', () => {
+  const wpisy = [w('2026-10-01', '6000'), w('2026-10-02', '-186,50'), w('2026-10-20', '5000')];
+  const kw = historiaKwartalow(wpisy, '2026-11-05').find((k) => k.klucz === '2026-4');
+  assert.equal(kw.przekroczenie, null);
+  assert.equal(kw.status.prog, '1.00');
+  assert.equal(kw.status.przekroczony, false);
+  assert.equal(kw.ostrzezenia.length, 1);
+  assert.equal(kw.ostrzezenia[0].przyczyna, 'limit');
+  assert.equal(kw.ostrzezenia[0].bezZwrotuPrzekroczenie, '2026-10-20');
+  assert.equal(kw.wolneGr, 0n);
+  const p = prognoza(wpisy, '2026-11-05');
+  assert.equal(p.dniMinelo, 36);
+  assert.equal(p.przekroczenie.data, '2026-11-06');
+  assert.equal(p.przekroczenie.prognoza, true);
+  assert.equal(p.przyczynaPrzekroczenia, 'tempo');
+  assert.equal(wartosciArkusza(posortuj(wpisy))[2].I, 'Limit wykorzystany (100%)');
+});

@@ -794,3 +794,21 @@ test('dane osobowe tylko za zgodą: „Drukuj” tylko dla pełnej faktury, wyb�
   assert.match(ew, /if \(stan\.dostepna && magazyn\.pamiecDanychWlaczona\(\)\) magazyn\.zmienUstawienia\(\{ osoba:/);
   assert.ok(!/zmienUstawienia\(\{ pamietaj: true, osoba/.test(ew), 'imię do wydruku nie zapisuje się pod pierwszym przełącznikiem');
 });
+
+test('faktura: błędna kwota innych faktur to błąd pola i blokada wystawienia, nie 0 zł', () => {
+  const html = czytaj(join(PUBLIC, 'faktura/index.html'));
+  assert.match(html, /<input id="f-inne"[^>]*aria-describedby="inne-blad inne-zakres inne-info">/);
+  assert.match(html, /<p id="inne-blad" class="podpowiedz ostrzezenie-tekst" hidden><\/p>/);
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
+  const fn = kod.slice(kod.indexOf('function inne()'), kod.indexOf('\n}\n', kod.indexOf('function inne()')));
+  assert.match(fn, /kwotaInnychGr\(\$\('f-inne'\)\.value\)/);
+  assert.ok(!/naGrosze\(\$\('f-inne'\)/.test(kod), 'bez własnego odczytu pola');
+  const wyst = kod.slice(kod.indexOf('async function wystaw('), kod.indexOf('\n}\n', kod.indexOf('async function wystaw(')));
+  assert.match(wyst, /if \(bladInnych && f\.nabywca\.rodzaj === 'firma' && r\.powod === 'w-limicie'\) \{\n\s+pokazBlad\(bladInnych, 'inne'\);\n\s+return;/);
+  assert.match(kod, /inne: 'f-inne'/);
+});
+
+test('faktura: wpis ewidencji z faktury bez nazwy pozycji, gdy pamięć danych do faktur jest wyłączona', () => {
+  const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
+  assert.match(kod, /dodajFaktureDoEwidencji\(wpisy, f, noweId\(\), \{ zNazwa: magazyn\.pamiecDanychWlaczona\(\) \}\)/);
+});

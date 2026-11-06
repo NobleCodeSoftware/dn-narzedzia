@@ -168,3 +168,9 @@ test('kursy hurtem: jedno zapytanie na walutę i okno 90 dni, wynik dla każdego
   assert.equal(adresy.filter((a) => a.includes('/usd/')).length, 1);
   assert.equal(w.get('USD|2026-07-01').stan, 'niedostepny', 'brak kursu USD z 30.06 w odpowiedzi');
 });
+
+test('dzień kursu po Zielonych Świątkach: piątek przed nimi', () => {
+  const k = dzienKursu('2027-05-17');
+  assert.equal(k.data, '2027-05-14');
+  assert.deepEqual(k.pominiete.map((p) => p.powod), ['Zielone Świątki', 'sobota']);
+});

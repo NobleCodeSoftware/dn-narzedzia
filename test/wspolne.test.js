@@ -64,3 +64,8 @@ test('termin CEIDG: D + 7 dni bez przesunięcia, dopisek o najbliższym dniu rob
   // Dopisek nie zmienia statusu ani terminu.
   assert.equal(kw.status.przekroczony, true);
 });
+
+test('dopisek terminu na Boże Ciało i Poniedziałek Wielkanocny 2027', () => {
+  assert.match(dopisekTerminu('2027-05-27'), /przesunąć się na 28\.05\.2027/);
+  assert.match(dopisekTerminu('2027-03-29'), /przesunąć się na 30\.03\.2027/);
+});

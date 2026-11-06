@@ -193,7 +193,8 @@
             <summary>Faktury dla firm wystawione gdzie indziej</summary>
             <div class="pole">
               <label for="f-inne">Faktury dla firm wystawione w tym miesiącu gdzie indziej, w KSeF i poza nim <span class="opcjonalne">(zł)</span></label>
-              <input id="f-inne" inputmode="decimal" autocomplete="off" placeholder="np. 1200" aria-describedby="inne-zakres inne-info">
+              <input id="f-inne" inputmode="decimal" autocomplete="off" placeholder="np. 1200" aria-describedby="inne-blad inne-zakres inne-info">
+              <p id="inne-blad" class="podpowiedz ostrzezenie-tekst" hidden></p>
               <p id="inne-zakres" class="podpowiedz">Bez faktur z kasy fiskalnej i bez faktur dla osób prywatnych.</p>
               <p id="inne-info" class="podpowiedz">Przepis mówi o fakturach wystawionych poza KSeF. Liczymy też faktury z KSeF, żeby nie zaniżyć sumy.</p>
             </div>

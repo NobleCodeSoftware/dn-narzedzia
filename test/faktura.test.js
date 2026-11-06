@@ -8,7 +8,7 @@ import {
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, sumaGr, sumaFirmWMiesiacu,
   BladPola, LIMIT_POZA_KSEF_GR, sprawdzIdSprzedawcy, poprawnyPesel, miesiacDopelniacz, TEKSTY_OKIEN, KOMUNIKAT_PO_OKNIE_LIMITU, lukaWNumeracji, polaczUtrate, dataReguly, skrotKsef,
   polaczFaktury, proponowanyNumer as numerPoPolaczeniu, opisTerminu, PODPOWIEDZ_ZAPLATY, nadajIdFakturom, bezFaktury,
-  ETYKIETA_INNYCH, ZAKRES_INNYCH, INFO_INNYCH,
+  ETYKIETA_INNYCH, ZAKRES_INNYCH, INFO_INNYCH, MAX_ZAPLAT, kwotaInnychGr,
 } from '../public/js/faktura-logika.js';
 
 const NIP_OK = '1234563218'; // suma kontrolna: 118 mod 11 = 8
@@ -589,4 +589,102 @@ test('usuwanie faktury po identyfikatorze: przy dwóch fakturach z tym samym num
   assert.equal(nadajIdFakturom([a])[0].id, 'fa', 'istniejący identyfikator zostaje');
   // Połączenie list z dwóch kart nie dubluje faktur z wyliczonym identyfikatorem.
   assert.equal(polaczFaktury(nadajIdFakturom(stare), nadajIdFakturom(stare)).length, 2);
+});
+
+// ---------------------------------------------------------------- terminy: przypadki brzegowe
+
+test('terminy: okno żądania do 29.02.2028 w roku przestępnym', () => {
+  const t = terminy('2027-11-30', '2028-02-29');
+  assert.equal(t.zadanieDo, '2028-02-29');
+  assert.equal(t.poTerminieZadania, false);
+  assert.equal(t.termin, '2028-03-15');
+  assert.equal(terminy('2027-11-30', '2028-03-01').poTerminieZadania, true);
+});
+
+test('terminy: trzy wpłaty częściowe, okno liczone od ostatniej', () => {
+  const t = terminy('2026-10-20', '2027-04-20', ['2026-11-03', '2026-12-05', '2027-01-10']);
+  assert.equal(t.zadanieDo, '2027-04-30');
+  assert.equal(t.poTerminieZadania, false);
+  assert.equal(t.termin, '2027-05-05');
+  assert.equal(t.terminNiejasny, false);
+});
+
+test('terminy: więcej wpłat niż pól formularza nie skraca okna żądania', () => {
+  const zaplaty = ['2026-10-25', '2026-11-05', '2026-11-20', '2026-12-01', '2026-12-10', '2027-01-15'];
+  const t = terminy('2026-10-20', '2027-04-10', zaplaty);
+  assert.equal(t.zadanieDo, '2027-04-30');
+  assert.equal(t.poTerminieZadania, false);
+  assert.equal(t.termin, '2027-04-25');
+  assert.equal(t.zaplaty.length, MAX_ZAPLAT);
+  assert.equal(t.zaplaty[0], '2026-10-25', 'najwcześniejsza wpłata zostaje');
+  assert.equal(t.zaplaty.at(-1), '2027-01-15', 'najpóźniejsza wpłata zostaje');
+});
+
+test('zaliczka przed dostawą: najwcześniejsza data wystawienia liczy się od zaliczki, wystawienie w terminie jest możliwe', () => {
+  const zaplaty = ['2026-10-05', '2027-02-10'];
+  const t = terminy('2027-01-20', '2026-10-20', zaplaty);
+  assert.equal(t.termin, '2026-11-15');
+  assert.equal(t.najwczesniej, '2026-08-06');
+  assert.ok(t.najwczesniej <= t.termin);
+  const f = normalizujFakture(faktura({ numer: '1/2026', dataWystawienia: '2026-11-10', dataSprzedazy: '2027-01-20', dataZadania: '2026-10-20', zaplaty }), { dzis: '2026-11-10' });
+  assert.equal(f.dataSprzedazy, '2027-01-20');
+  // Bez zaliczki granicą jest 60 dni przed dostawą.
+  assert.equal(terminy('2027-01-20').najwczesniej, '2026-11-21');
+  assert.throws(() => normalizujFakture(faktura({ numer: '1/2026', dataWystawienia: '2026-11-10', dataSprzedazy: '2027-01-20' }), { dzis: '2026-11-10' }),
+    (e) => e instanceof BladPola && e.pole === 'dataWystawienia' && /60 dni/.test(e.message) && /21\.11\.2026/.test(e.message));
+  // Wpłata po dostawie nie przesuwa granicy.
+  assert.equal(terminy('2027-01-20', '', ['2027-02-10']).najwczesniej, '2026-11-21');
+});
+
+test('zaliczka, dostawa i dopłata: żądanie w miesiącu dopłaty to termin niejasny', () => {
+  const t = terminy('2026-11-20', '2026-12-15', ['2026-10-05', '2026-12-10']);
+  assert.equal(t.termin, '2026-12-15');
+  assert.equal(t.terminNiejasny, true);
+  assert.equal(t.zadanieDo, '2027-03-31');
+});
+
+test('KSeF: październik równo 10 000,00 zł nie odbiera prawa w listopadzie', () => {
+  const f = [zapisana('1/2026', '2026-09-15', '9500'), zapisana('2/2026', '2026-10-02', '6000'),
+    zapisana('3/2026', '2026-10-05', '3000', 'konsument'), zapisana('4/2026', '2026-10-22', '4000')];
+  const pazdziernik = regulaKsef({ dataWystawienia: '2026-10-22', dzis: '2026-10-22', rodzaj: 'firma', kwotaGr: zl('4000'), faktury: f, numer: '4/2026' });
+  assert.deepEqual([pazdziernik.stan, pazdziernik.powod, pazdziernik.zapasGr], ['poza-ksef', 'w-limicie', 0n]);
+  const rowno = regulaKsef({ dataWystawienia: '2026-11-03', dzis: '2026-11-03', rodzaj: 'firma', kwotaGr: 1000000n, faktury: f });
+  assert.deepEqual([rowno.stan, rowno.powod], ['poza-ksef', 'w-limicie']);
+  const grosz = regulaKsef({ dataWystawienia: '2026-11-03', dzis: '2026-11-03', rodzaj: 'firma', kwotaGr: 1000001n, faktury: f });
+  assert.deepEqual([grosz.stan, grosz.powod], ['blokada', 'limit']);
+});
+
+// ---------------------------------------------------------------- pole „inne faktury”
+
+test('inne faktury: kwota z separatorem tysięcy liczy się w całości', () => {
+  for (const t of ['3.000,00', '3 000,00 zł', '3,000.00', '3000,00', '3 000,00', '3000.00', '3 000 PLN', '3 000 zł', '3000']) {
+    assert.equal(kwotaInnychGr(t), 300000n, t);
+  }
+  assert.equal(kwotaInnychGr(''), 0n);
+  assert.equal(kwotaInnychGr('   '), 0n);
+  assert.equal(kwotaInnychGr('1.234,50'), 123450n);
+  assert.equal(kwotaInnychGr('12,5'), 1250n);
+});
+
+test('inne faktury: błędna albo niejednoznaczna kwota to błąd pola, nigdy 0 zł', () => {
+  for (const t of ['abc', '10.000', '1,234', '-100', '12,345 zł', '0,005', '1.5.0,0']) {
+    assert.throws(() => kwotaInnychGr(t), (e) => e instanceof BladPola && e.pole === 'inne', t);
+  }
+  assert.match(String((() => { try { kwotaInnychGr('10.000'); } catch (e) { return e.message; } })()), /10000.*10,00/);
+});
+
+test('inne faktury: faktura dla firmy z KSeF wpisana z kropką tysięcy przesądza o limicie', () => {
+  const f = [zapisana('1/2026', '2026-09-15', '9500'), zapisana('2/2026', '2026-10-02', '6000'), zapisana('3/2026', '2026-10-05', '3000', 'konsument')];
+  const r = regulaKsef({ dataWystawienia: '2026-10-22', dzis: '2026-10-22', rodzaj: 'firma', kwotaGr: zl('1000.01'), faktury: f, inneGr: kwotaInnychGr('3.000,00') });
+  assert.deepEqual([r.stan, r.powod, r.poGr], ['blokada', 'limit', 1000001n]);
+});
+
+test('ewidencja: bez pamięci danych opis wpisu z faktury nie zawiera nazwy pozycji', () => {
+  const f = normalizujFakture(faktura({ pozycje: [{ nazwa: 'Sesja zdjęciowa – Anna Nowak', ilosc: '1', cena: '300' }] }));
+  assert.equal(dodajFaktureDoEwidencji([], f, 'n1', { zNazwa: false }).wpis.opis, 'Faktura 1/2026');
+  assert.equal(dodajFaktureDoEwidencji([], f, 'n1').wpis.opis, 'Faktura 1/2026: Sesja zdjęciowa – Anna Nowak');
+  // Połączenie z wpisem bez opisu: też bez nazwy pozycji.
+  const bezOpisu = [normalizujWpis({ id: 'x', data: '2026-10-20', kwota: '300', opis: '' })];
+  assert.equal(dodajFaktureDoEwidencji(bezOpisu, f, 'n2', { zNazwa: false }).wpis.opis, 'Faktura 1/2026');
+  assert.equal(dodajFaktureDoEwidencji(bezOpisu, f, 'n2').wpis.opis, 'Faktura 1/2026: Sesja zdjęciowa – Anna Nowak');
 });
