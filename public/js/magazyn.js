@@ -14,6 +14,9 @@ const KLUCZ_USTAWIENIA = 'dn-ewidencja-ustawienia-v1';
 const KLUCZ_FAKTURY = 'dn-faktury-v1'; // wystawione faktury i miesiąc utraty prawa (przełącznik „Pamiętaj wpisy ewidencji”)
 const KLUCZ_DANE = 'dn-dane-faktur-v1'; // dane sprzedawcy i zapisani klienci (przełącznik „Zapamiętaj moje dane…”)
 export const KLUCZE = { ewidencja: KLUCZ, ustawienia: KLUCZ_USTAWIENIA, faktury: KLUCZ_FAKTURY, dane: KLUCZ_DANE };
+// Kopia robocza z pierwszej wersji strony (wiersze ewidencji, domyślnie wyłączona). Obecna wersja jej nie czyta,
+// ale „Wyczyść dane” usuwa także ją, żeby w przeglądarce nie zostało nic, co strona kiedyś zapisała.
+export const KLUCZE_NAJSTARSZEJ_WERSJI = ['dn-narzedzia.ewidencja.bufor', 'dn-narzedzia.ewidencja.bufor-wlaczony'];
 
 function magazyn() {
   try { return globalThis.localStorage ?? null; } catch { return null; }
@@ -32,8 +35,12 @@ export function wczytaj() {
   return Array.isArray(d?.wpisy) ? d : null;
 }
 
-/** true, gdy zapis się udał. */
+/**
+ * true, gdy zapis się udał. Przy wyłączonym „Pamiętaj wpisy ewidencji” nic nie zapisuje i zwraca false: ustawienie
+ * jest czytane z pamięci w chwili zapisu, bo mogło zostać wyłączone w innej karcie.
+ */
 export function zapisz(wpisy) {
+  if (!pamiecWlaczona()) return false;
   try {
     magazyn()?.setItem(KLUCZ, JSON.stringify({ wersja: 1, zapisano: new Date().toISOString(), wpisy }));
     return Boolean(magazyn());
@@ -113,6 +120,15 @@ export function stanPamieciDanych() {
   return { wlaczona: false, czekaNaWybor: daneZWczesniejszejWersji() };
 }
 
+/**
+ * Czy w przeglądarce mogą być dane do faktur (sprzedawca, klienci), które zostają po wyłączeniu pamięci wpisów:
+ * zapamiętywanie danych włączone albo dane z wcześniejszej wersji czekają na wybór.
+ */
+export function zostajaDaneFaktur() {
+  const s = stanPamieciDanych();
+  return s.wlaczona || s.czekaNaWybor;
+}
+
 /** Czy wolno zapisywać dane osobowe do faktur: tylko po włączeniu przez użytkownika. */
 export function pamiecDanychWlaczona() {
   return stanPamieciDanych().wlaczona;
@@ -181,9 +197,10 @@ const kluczFaktury = (f) => `${f?.numer}|${f?.dataWystawienia}|${f?.suma}`;
  * Zapisuje wystawione faktury i miesiąc utraty prawa (przełącznik „Pamiętaj wpisy ewidencji”). Pełne faktury tylko
  * przy włączonym „Zapamiętaj moje dane…”; bez niego rekordy skrócone, bez danych osobowych. Przed wyborem po przejściu
  * ze starszej wersji pełne faktury i dane zapisane wcześniej zostają bez zmian, a nowe faktury są zapisywane w skrócie.
- * true, gdy zapis się udał.
+ * true, gdy zapis się udał. Przy wyłączonym „Pamiętaj wpisy ewidencji” (także w innej karcie) nic nie zapisuje.
  */
 export function zapiszFaktury({ faktury, utrataOd = null }) {
+  if (!pamiecWlaczona()) return false;
   try {
     const stan = stanPamieciDanych();
     let lista;
@@ -246,7 +263,10 @@ export function usunDaneFaktur() {
   return ok;
 }
 
-/** Usuwa wszystko, co strona zapisała w tej przeglądarce (ewidencja, faktury, dane do faktur, ustawienia). */
+/**
+ * Usuwa wszystko, co strona zapisała w tej przeglądarce (ewidencja, faktury, dane do faktur, ustawienia,
+ * kopia robocza z pierwszej wersji strony).
+ */
 export function wyczysc() {
-  return usun([KLUCZ, KLUCZ_USTAWIENIA, KLUCZ_FAKTURY, KLUCZ_DANE]);
+  return usun([KLUCZ, KLUCZ_USTAWIENIA, KLUCZ_FAKTURY, KLUCZ_DANE, ...KLUCZE_NAJSTARSZEJ_WERSJI]);
 }

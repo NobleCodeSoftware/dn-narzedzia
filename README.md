@@ -7,7 +7,7 @@ Bez kont i bez serwera aplikacji: wszystko działa w przeglądarce.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.4.3. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
+Wersja 0.4.4. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
@@ -29,7 +29,7 @@ Wersja 0.4.3. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 - `csv.js`, `xlsx.js`, `zip.js`: własny, minimalny odczyt i zapis CSV i XLSX bez bibliotek (ZIP + `CompressionStream('deflate-raw')`).
 - `magazyn.js`: jedyny moduł z dostępem do `localStorage`.
 - `ewidencja-widok.js`: widok (DOM). Elementy powstają przez `createElement` i `textContent`, bez wstawiania HTML z tekstu.
-- `logic.js`, `wspolne.js`, `limit.js`: szybki licznik limitu; w `wspolne.js` także dopisek o terminie CEIDG w dzień wolny.
+- `logic.js`, `wspolne.js`, `limit.js`: szybki licznik limitu; w `wspolne.js` także dopisek o terminie CEIDG w dzień wolny i treść okna wyłączenia pamięci (o danych do faktur tylko wtedy, gdy mogą być zapisane).
 - Wydruk: `css/druk.css` (`media="print"`).
 
 Kwoty są liczone w groszach na `BigInt`, bez liczb zmiennoprzecinkowych.
@@ -54,10 +54,12 @@ do art. 14 ust. 1m ustawy o PIT, bo przepisy o limicie tego nie rozstrzygają.
 - **Przekroczenie się nie cofa** (art. 5 ust. 3 ustawy Prawo przedsiębiorców): gdy suma narastająco przekroczy limit dnia
   D, kwartał do końca ma stan „przekroczony od D” i termin D + 7 dni, także gdy późniejsze zwroty obniżą sumę poniżej limitu
   (`statusKwartalu()`). Tak samo kolumna „Ostrzeżenie” w eksporcie CSV i XLSX: od dnia przekroczenia do końca kwartału
-  ma „Limit przekroczony” (`wartosciArkusza()`).
+  ma „Limit przekroczony” (`wartosciArkusza()`). Formuły arkusza XLSX (gdy program
+  arkuszowy przelicza je przy otwarciu) liczą tak samo (zob. „Eksport XLSX”).
 - **Ostrzeżenie** (`ostrzezeniaZwrotow()`): gdy bez zwrotu limit jego kwartału byłby przekroczony (albo przekroczony
   wcześniej) i gdy zwrot oznaczono jako dotyczący sprzedaży z wcześniejszego kwartału (nieobowiązkowe pole „Zwrot dotyczy
-  sprzedaży z dnia”). Pole służy tylko do ostrzeżenia i niczego nie przelicza w innym kwartale. Zdanie „Bez niego limit
+  sprzedaży z dnia”, w pliku CSV i XLSX kolumna J). Pole służy tylko do ostrzeżenia i niczego nie przelicza w innym
+  kwartale. Przy zwrocie pole daty ma etykietę „Data dokumentu korekty”. Zdanie „Bez niego limit
   byłby przekroczony dnia …” pojawia się tylko wtedy, gdy to prawda.
 - Kwartał z samymi zwrotami ma 0% i pusty pasek, także w kolumnie „% limitu” eksportu; nadwyżka zwrotów nie przechodzi
   do innego kwartału.
@@ -87,19 +89,34 @@ Import XLSX/CSV przyjmuje kwoty w zapisie polskim i angielskim („1 234,50”, 
 separatorem i dokładnie trzema cyframi po nim („1,234”, „1.234”) odrzuca z błędem wiersza, bo może oznaczać 1234 zł
 albo 1,234 zł; formularz pokazuje wtedy komunikat.
 
+Kolumna J („Zwrot dotyczy sprzedaży z dnia”) jest nieobowiązkowa i rozpoznawana po nagłówku. Pliki bez niej (eksporty
+sprzed wersji 0.4.4, arkusze z innych programów) wczytują się jak dotąd. Data w kolumnie J liczy się tylko przy zwrocie;
+błędna albo późniejsza niż data dokumentu korekty daje błąd wiersza.
+
 ### Eksport XLSX
 
-Eksport wypełnia kolumny A–E wzoru `/pobierz/arkusz-limit-dn.xlsx` i zapisuje wyliczone wartości F–I (formuły zostają),
-pozostałe zakładki zostają bez zmian. Przy ponad 1000 wpisach eksport rozszerza zakresy formuł. Wyeksportowany plik
-sprawdzono w LibreOffice (headless): otwiera się, a przeliczone wartości są zgodne.
-Wyjątek: formuły wzoru w kolumnach H i I liczą z bieżącej sumy kwartału, więc po przeliczeniu w programie arkuszowym
-wiersz zwrotu po przekroczeniu może pokazać stan poniżej limitu, a kwartał z samymi zwrotami ujemny procent. Zapisane
-wartości (i CSV) pokazują stan jak na stronie.
+Eksport wypełnia kolumny A–E i J wzoru `/pobierz/arkusz-limit-dn.xlsx` i zapisuje wyliczone wartości F–I (formuły
+zostają), pozostałe zakładki zostają bez zmian. Przy ponad 1000 wpisach eksport rozszerza zakresy formuł.
+
+Wzór ma ustawione pełne przeliczenie przy otwarciu (`fullCalcOnLoad`). Czy program arkuszowy pokaże wynik formuł, czy
+zapisane wartości, zależy od programu i jego ustawień (w LibreOffice Calc: przeliczanie przy wczytywaniu plików Excela).
+Wynik jest ten sam: zapisane wartości F–I pochodzą ze strony, a formuły liczą tak jak strona:
+- H (`% limitu`) = `MAX(0, G / limit)`, więc kwartał z samymi zwrotami ma 0%, a nie ujemny procent;
+- I (`Ostrzeżenie`) ma „Limit przekroczony”, gdy w tym kwartale do daty wiersza któryś wiersz miał H > 1
+  (`COUNTIFS` po H i datach), więc późniejszy zwrot nie cofa przekroczenia; kolor wiersza też zostaje czerwony;
+- zakładka „Podsumowanie”: procent nie spada poniżej 0, a kwartał z przekroczeniem ma „Limit przekroczony” i 0 zł
+  w kolumnie „Zostało do limitu”, także gdy zwroty obniżyły sumę.
+
+Sprawdzone w LibreOffice Calc 24.2 (headless, wymuszone przeliczenie przy wczytaniu): eksport 17 wpisów (przekroczenie
+i zwrot w tym samym kwartale, zwrot do równego limitu, kwartał z samymi zwrotami, waluta z kursem i bez kursu,
+granica 100% i +1 grosz, rok bez płacy minimalnej) daje w F–I te same wartości co strona, także po usunięciu zapisanych
+wartości z pliku. W Excelu i Arkuszach Google tego nie sprawdzano; formuły używają tylko funkcji wymienionych
+w „Arkusz XLSX: jak odtworzyć”.
 
 ### Faktura bez VAT (zwolnienie)
 
 Strona składa fakturę z danych użytkownika i nie ocenia jego sytuacji. Blokuje przypadki, w których przepis każe
-wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b ust. 3, art. 106i ust. 1, 2, 6 i 7 oraz art. 145m ustawy o VAT ponownie 05.11.2026.
+wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b ust. 3, art. 106i ust. 1, 2, 6 i 7 oraz art. 145m ustawy o VAT ponownie 05.11.2026, art. 106i ust. 8 (07.11.2026).
 
 - **Elementy** (art. 106e ust. 1 ustawy o VAT): data wystawienia, kolejny numer, imiona i nazwiska lub nazwy oraz adresy
   sprzedawcy i nabywcy, identyfikator podatkowy sprzedawcy, NIP nabywcy-firmy, data sprzedaży (gdy inna niż data
@@ -122,7 +139,10 @@ wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b
   tego nie rozstrzygają, więc strona podaje późniejszą z dat (15. dzień po dostawie albo dzień żądania) i prosi o wystawienie
   niezwłocznie; w pozostałych przypadkach 15 dni od żądania. Bez daty zapłaty liczy jak przy samej dostawie i podpowiada,
   kiedy ją podać. Najwcześniej fakturę wystawia się 60 dni przed dostawą, a gdy klient zapłacił (także część) przed
-  dostawą, 60 dni przed tą zapłatą (art. 106i ust. 7); ta granica nigdy nie wypada po terminie wystawienia. Przy większej
+  dostawą, 60 dni przed tą zapłatą (art. 106i ust. 7); ta granica nigdy nie wypada po terminie wystawienia. Wyjątku
+  z art. 106i ust. 8 strona nie obsługuje: przy dostawach i usługach rozliczanych okresowo (art. 19a ust. 3, 4 i ust. 5
+  pkt 4, np. najem albo stała obsługa) faktura z podanym okresem rozliczeniowym może być wystawiona wcześniej niż 60 dni
+  przed wykonaniem, a strona zawsze stosuje granicę z ust. 7. Przy większej
   liczbie wpłat niż pól formularza liczą się najwcześniejsza i najpóźniejsze. Data wystawienia to zawsze dzisiejsza data (art. 106e ust. 1 pkt 1), także dlatego, że od niej zależy
   reguła KSeF.
 - **KSeF i nabywca-firma** (`regulaKsef()`): art. 106ga ust. 1, art. 145l i **art. 145m**. Do 31.03.2026 faktury mogły
@@ -155,14 +175,17 @@ wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b
 ## Arkusz XLSX: jak odtworzyć
 
 ```sh
-pip install openpyxl                  # MIT
+pip install openpyxl==3.1.5 lxml      # MIT, BSD
 python3 scripts/arkusz.py --sprawdz   # zapisuje public/pobierz/arkusz-limit-dn.xlsx i sprawdza plik
 ```
 
 Plik jest deterministyczny (stałe daty w metadanych i w ZIP), więc ponowne uruchomienie bez zmian w skrypcie daje
-identyczny plik. `--sprawdz` ponownie wczytuje plik przez openpyxl i odrzuca makra, łącza zewnętrzne, `HYPERLINK`
-i adresy w formułach. Używane funkcje: `IF`, `OR`, `AND`, `ISNUMBER`, `ROUND`, `SUMIFS`, `COUNTIFS`, `DATE`, `YEAR`,
-`MONTH`, `INT`, `EOMONTH`, `VLOOKUP`, `IFERROR` (są w Excelu 2010+, LibreOffice i Arkuszach Google).
+identyczny plik. Bajt w bajt tylko z tą samą wersją openpyxl i z zainstalowanym `lxml`: bez niego openpyxl zapisuje XML
+innym serializatorem (inny układ przestrzeni nazw i spacje w pustych znacznikach), więc plik różni się we wszystkich
+częściach, choć treść arkuszy jest ta sama. `--sprawdz` ponownie wczytuje plik przez openpyxl i odrzuca makra, łącza zewnętrzne, `HYPERLINK`
+i adresy w formułach. Używane funkcje: `IF`, `OR`, `AND`, `ISNUMBER`, `ROUND`, `MAX`, `LEFT`, `SUMIFS`, `COUNTIFS`,
+`DATE`, `YEAR`, `MONTH`, `INT`, `EOMONTH`, `VLOOKUP`, `IFERROR` (są w Excelu 2010+, LibreOffice i Arkuszach Google;
+bez `MAXIFS`, które wymaga Excela 2019).
 
 Kwoty płacy minimalnej są w dwóch miejscach: `PLACA_MINIMALNA` w `public/js/logic.js` i `PLACA` w `scripts/arkusz.py`.
 Zmieniaj je razem.
@@ -219,9 +242,9 @@ node --test            # Node 20+; bez zależności
 
 - `test/logic.test.js`: limit, progi, kwartały, strefa czasowa, kwoty.
 - `test/wspolne.test.js`: komunikaty progów, zdanie z kwotami, odczyt wpisu i tekst ogłoszenia dla czytnika ekranu, termin CEIDG w dzień wolny (dopisek z najbliższym dniem roboczym).
-- `test/pamiec.test.js`: dwa przełączniki pamięci, domyślnie faktury bez PESEL i danych klientów (rekord skrócony), numeracja i limit KSeF na rekordach skróconych, wyłączenie drugiego przełącznika usuwa dane osobowe także z faktur, usuwanie kluczy po wyłączeniu (zostaje tylko ustawienie), jednorazowy wybór po przejściu z wcześniejszej wersji.
+- `test/pamiec.test.js`: dwa przełączniki pamięci, domyślnie faktury bez PESEL i danych klientów (rekord skrócony), numeracja i limit KSeF na rekordach skróconych, wyłączenie drugiego przełącznika usuwa dane osobowe także z faktur, usuwanie kluczy po wyłączeniu (zostaje tylko ustawienie), jednorazowy wybór po przejściu z wcześniejszej wersji, brak zapisu wpisów i faktur po wyłączeniu pamięci w innej karcie, ustawienia wcześniejszych wersji nie są zgodą, „Wyczyść dane” usuwa też kopię roboczą pierwszej wersji strony.
 - `test/kalendarz-nbp.test.js`: Wielkanoc, święta 2026–2027, Wigilia wolna od 2025, dzień kursu przy weekendach i świętach, wybór kursu i zapytania NBP (bez sieci), kursy dla wielu wpisów naraz.
-- `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, zwroty (przekroczenie się nie cofa, ostrzeżenia, kwartał z samymi zwrotami), łączenie wpisów z dwóch kart, import, CSV i XLSX (round-trip, ponad 1000 wierszy, pliki z innych programów), ZIP (w tym ochrona przed „bombą ZIP”).
+- `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, zwroty (przekroczenie się nie cofa, ostrzeżenia, kwartał z samymi zwrotami), łączenie wpisów z dwóch kart, import, CSV i XLSX (round-trip, kolumna J z datą zwrotu i pliki bez niej, ponad 1000 wierszy, pliki z innych programów), formuły H i I wzoru XLSX (procent nie mniejszy niż 0, przekroczenie się nie cofa), ZIP (w tym ochrona przed „bombą ZIP”).
 - `test/faktura.test.js`: numeracja, blokada faktur dla firm od 2027 r., limit 10 000 zł w 2026 r. (równo, +1 grosz, faktury z innych miejsc, utrata prawa w kolejnych miesiącach, osoba prywatna poza limitem), data wystawienia równa dziś, sumy brutto i zaokrąglenia, kwota słownie, NIP i PESEL, elementy faktury, terminy (także z datą zapłaty i zaliczki), faktury z KSeF w limicie 10 000 zł, usuwanie faktury po identyfikatorze, wydruk bez „null”, ewidencja bez dublowania, zachowanie bez `localStorage`, teksty okien (najwyżej 2 zdania w akapicie).
 - `test/zmiana-roku.test.js`: przejście z 2026 na 2027 przy symulowanym zegarze (31.12.2026, 1.01.2027, ostatnie dni kwartałów, 1.04.2027, 31.12.2027): data w Warszawie, limit kwartału i prognoza według bieżącej daty, historia i wydruk na przełomie roku, blokada faktur dla firm od 1.01.2027, numeracja od 1/2027, terminy faktury, dzień kursu NBP i zapytania przez granicę roku, ponowne przeliczenie po powrocie na kartę otwartą przed północą.
 - `test/strony.test.js` (metadane): tytuły, opisy, `canonical`, Open Graph, JSON-LD (tylko `/` i `/faktura/`, poprawny JSON, bez `aggregateRating` i `review`), mapa strony (`sitemap.xml`: adresy kanoniczne, aktualne `lastmod`) i `robots.txt`, strona `404.html` (noindex, bez `canonical` i JSON-LD).
@@ -350,6 +373,6 @@ Podatności zgłaszaj prywatnie, zgodnie z [SECURITY.md](SECURITY.md). Kontakt: 
 ## Licencja
 
 MIT, `Copyright (c) 2026 NobleCode`, zob. [LICENSE](LICENSE). Strona nie ma zależności zewnętrznych;
-generator arkusza używa openpyxl (MIT), który nie trafia do `public/`.
+generator arkusza używa openpyxl (MIT) i lxml (BSD), które nie trafiają do `public/`.
 Test dostępności używa `@axe-core/playwright` i `axe-core` (MPL-2.0) oraz `playwright-core` (Apache-2.0)
 jako zależności deweloperskich; nie są kopiowane ani dołączane do `public/`.

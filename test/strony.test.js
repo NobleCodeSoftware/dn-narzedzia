@@ -85,6 +85,15 @@ test('arkusz XLSX: jest, to ZIP, bez makr i łączy zewnętrznych', () => {
   }
 });
 
+test('przycisk pobierania arkusza podaje aktualny rozmiar pliku (KB = 1000 B, zaokrąglenie)', () => {
+  const rozmiar = readFileSync(join(PUBLIC, 'pobierz/arkusz-limit-dn.xlsx')).length;
+  const html = czytaj(join(PUBLIC, 'index.html'));
+  const etykiety = [...html.matchAll(/href="\/pobierz\/arkusz-limit-dn\.xlsx"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  assert.ok(etykiety.length > 0, 'brak przycisku pobierania');
+  for (const e of etykiety) assert.equal(e, `Pobierz arkusz (XLSX, ${Math.round(rozmiar / 1000)} KB)`);
+  assert.ok(!/\b\d+ KB\b/.test(html.replace(/Pobierz arkusz \(XLSX, \d+ KB\)/g, '')), 'inny rozmiar w treści strony');
+});
+
 test('_redirects: tylko stałe przekierowania usuniętych podstron na stronę główną', () => {
   const linie = czytaj(join(PUBLIC, '_redirects')).split('\n').filter((l) => l.trim() && !l.startsWith('#'));
   assert.ok(linie.length > 0);
@@ -447,7 +456,14 @@ test('błąd znika przy zmianie pola, fokus po oknie limitu na cenie, utratę pr
   const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   const schowaj = kod.slice(kod.indexOf('const schowajPotwierdzenie'), kod.indexOf('};', kod.indexOf('const schowajPotwierdzenie')));
   assert.match(schowaj, /\$\('form-blad'\)\.hidden = true;/);
-  assert.match(schowaj, /removeAttribute\('aria-invalid'\)/);
+  assert.match(schowaj, /zdejmijOznaczeniaBledow\(\);/);
+  // Pole „inne faktury” zostaje oznaczone, dopóki widać jego komunikat, także po błędzie innego pola.
+  const cialo = (nazwa) => kod.slice(kod.indexOf(nazwa), kod.indexOf('\n}\n', kod.indexOf(nazwa)));
+  const zdejmij = cialo('function zdejmijOznaczeniaBledow()');
+  assert.match(zdejmij, /removeAttribute\('aria-invalid'\)/);
+  assert.match(zdejmij, /e\.id === 'f-inne' && !\$\('inne-blad'\)\.hidden\) continue;/);
+  assert.match(cialo('function pokazBlad('), /zdejmijOznaczeniaBledow\(\);/);
+  assert.equal((kod.match(/querySelectorAll\('\[aria-invalid\]'\)/g) ?? []).length, 1, 'jedno miejsce zdejmowania oznaczeń');
   assert.match(kod, /const pole = \$\(`pozycja-\$\{ostatnia\}-cena`\);\n\s+pole\.focus/);
   assert.match(kod, /tekst: TEKSTY_OKIEN\.limit\(r\.miesiac\),/);
   assert.match(kod, /tekst: TEKSTY_OKIEN\.cofnij,/);
@@ -739,7 +755,10 @@ test('ewidencja: przy zwrocie podpowiedź o dacie dokumentu korekty i pole „do
   assert.match(html, /<p id="stan-zwroty" class="podpowiedz ostrzezenie-tekst" hidden><\/p>/);
   const kod = czytaj(join(PUBLIC, 'js/ewidencja-widok.js'));
   assert.match(kod, /dotyczy: zwrotWFormularzu\(\) \? \$\('f-dotyczy'\)\.value : ''/);
-  assert.match(html, /Ta data służy tylko do ostrzeżenia i nie trafia do pliku CSV ani XLSX\./);
+  assert.match(html, /Zwrot i tak liczy się w kwartale daty dokumentu korekty\. Ta data służy tylko do ostrzeżenia i zapisuje się w pliku CSV i XLSX \(kolumna J\)\./);
+  // Etykieta przy zwrocie mówi o dokumencie korekty, a nie o dacie fizycznego zwrotu towaru.
+  assert.match(kod, /\$\('etykieta-data'\)\.textContent = zwrot \? 'Data dokumentu korekty' : 'Data sprzedaży';/);
+  assert.ok(!/Data zwrotu/.test(kod) && !/Data zwrotu/.test(html), 'bez etykiety „Data zwrotu”');
   assert.match(kod, /akapitDopisku\(h\.przekroczenie\.termin\)/, 'dopisek o dniu wolnym przy terminie CEIDG');
   // Fakt przekroczenia nie ukrywa prognozy z planu (ramka składa części zamiast wybierać jedną).
   const fn = kod.slice(kod.indexOf('function renderujPrzekroczenie()'), kod.indexOf('\n}\n', kod.indexOf('function renderujPrzekroczenie()')));
@@ -811,4 +830,13 @@ test('faktura: błędna kwota innych faktur to błąd pola i blokada wystawienia
 test('faktura: wpis ewidencji z faktury bez nazwy pozycji, gdy pamięć danych do faktur jest wyłączona', () => {
   const kod = czytaj(join(PUBLIC, 'js/faktura-widok.js'));
   assert.match(kod, /dodajFaktureDoEwidencji\(wpisy, f, noweId\(\), \{ zNazwa: magazyn\.pamiecDanychWlaczona\(\) \}\)/);
+});
+
+test('wyłączenie pamięci wpisów: treść okna zależy od tego, czy w przeglądarce mogą być dane do faktur; zapis sprawdza ustawienie na bieżąco', () => {
+  for (const [plik, strona] of [['js/ewidencja-widok.js', 'ewidencja'], ['js/faktura-widok.js', 'faktura']]) {
+    const kod = czytaj(join(PUBLIC, plik));
+    assert.match(kod, new RegExp(`tytul: 'Wyłączyć pamięć przeglądarki\\?',\\s+tekst: tekstWylaczeniaPamieci\\(\\{ daneZostaja: magazyn\\.zostajaDaneFaktur\\(\\), strona: '${strona}' \\}\\),`), plik);
+  }
+  // Karta, w której pamięć wyłączono w innej karcie, nie pokazuje komunikatu o nieudanym zapisie.
+  assert.match(czytaj(join(PUBLIC, 'js/ewidencja-widok.js')), /if \(stan\.przyklad \|\| !stan\.pamietaj \|\| !magazyn\.pamiecWlaczona\(\)\) return;/);
 });

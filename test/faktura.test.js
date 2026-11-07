@@ -2,6 +2,7 @@
 // ewidencja bez dublowania i zachowanie bez localStorage.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalizujWpis, kolejnyNumer } from '../public/js/ewidencja-logika.js';
 import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
@@ -542,6 +543,28 @@ test('terminy bez daty zapłaty działają jak dotąd, a formularz podpowiada, k
   assert.match(opisTerminu(terminy('2026-10-20')), /^Termin wystawienia: do 15\.11\.2026 \(art\. 106i ust\. 6 pkt 1 ustawy o VAT\)\. Klient może poprosić do 31\.01\.2027\.$/);
   assert.deepEqual(normalizujFakture(faktura({ zaplaty: ['2026-10-25', 'zle'] })).zaplaty, ['2026-10-25']);
   assert.deepEqual(normalizujFakture(faktura()).zaplaty, []);
+});
+
+// Teksty przy polach wpłat i „inne faktury” są w HTML (strona działa bez budowania), a ich brzmienie w stałych modułu.
+// Test pilnuje, żeby się nie rozjechały.
+test('teksty przy wpłatach i polu „inne faktury” na stronie są takie same jak stałe w module', () => {
+  const html = readFileSync(new URL('../public/faktura/index.html', import.meta.url), 'utf8');
+  const tresc = (id) => new RegExp(`<p id="${id}" class="podpowiedz">([^<]*)</p>`).exec(html)?.[1];
+  assert.equal(tresc('zaplaty-info'), PODPOWIEDZ_ZAPLATY);
+  assert.equal(tresc('inne-zakres'), ZAKRES_INNYCH);
+  assert.equal(tresc('inne-info'), INFO_INNYCH);
+  assert.match(html, new RegExp(`<label for="f-inne">${ETYKIETA_INNYCH} <span class="opcjonalne">`));
+});
+
+// Żądanie po miesiącu dostawy, ale do końca miesiąca późniejszej wpłaty: przepisy nie rozstrzygają terminu, więc
+// strona podaje późniejszą z dat (15. dzień po dostawie albo dzień żądania). Dotyczy to także żądania zgłoszonego
+// przed tą wpłatą. Termin jest wtedy wcześniejszy niż 15 dni od żądania, czyli ostrożny dla wystawcy.
+test('termin wystawienia, gdy żądanie faktury przyszło przed późniejszą wpłatą: nie później niż 15 dni od żądania', () => {
+  const b = terminy('2026-10-20', '2026-11-10', ['2026-12-05']);
+  assert.deepEqual([b.termin, b.terminNiejasny, b.poTerminieZadania], ['2026-11-15', true, false]);
+  const c = terminy('2026-10-20', '2026-11-10');
+  assert.deepEqual([c.termin, c.terminNiejasny], ['2026-11-25', false]);
+  assert.ok(b.termin <= c.termin);
 });
 
 test('KSeF od 1.01.2027: faktura dla firmy zablokowana z komunikatem o KSeF (wymaga NIP, mówi o tym ramka blokady)', () => {

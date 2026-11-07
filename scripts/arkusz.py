@@ -3,7 +3,8 @@
 
 Arkusz działa w Excelu, LibreOffice Calc i Arkuszach Google: same formuły, bez makr,
 bez połączeń z siecią, bez łączy zewnętrznych i bez funkcji HYPERLINK.
-Wymaga openpyxl (licencja MIT): pip install openpyxl
+Wymaga openpyxl 3.1.5 (licencja MIT) i lxml (licencja BSD): pip install openpyxl==3.1.5 lxml
+Bez lxml openpyxl zapisuje XML innym serializatorem, więc plik nie jest bajt w bajt taki sam.
 
 Użycie (z katalogu głównego repozytorium):
     python3 scripts/arkusz.py            # zapisuje public/pobierz/arkusz-limit-dn.xlsx
@@ -74,8 +75,28 @@ def drabinka_ostrzezen(ref: str) -> str:
     )
 
 
-def kolory_progow(ws, zakres: str, kolumna_proc: str, pierwszy_wiersz: int) -> None:
+def przekroczono_w_kwartale(zakres_h: str, zakres_a: str, od: str, do: str) -> str:
+    """Warunek: w kwartale od `od` do `do` (włącznie) któryś wiersz miał sumę ponad limitem (ułamek limitu > 1).
+
+    Przekroczenie się nie cofa: późniejszy zwrot obniża sumę, ale nie zmienia stanu do końca kwartału.
+    COUNTIFS zamiast MAXIFS, bo działa też w Excelu 2010 i nie wymaga prefiksu _xlfn w pliku.
+    """
+    return f'COUNTIFS({zakres_h},">1",{zakres_a},">="&{od},{zakres_a},"<="&{do})>0'
+
+
+def kolory_progow(ws, zakres: str, kolumna_proc: str, pierwszy_wiersz: int, kolumna_ostrzezenia: str) -> None:
     ref = f"${kolumna_proc}{pierwszy_wiersz}"
+    # Przekroczenie z wcześniejszego dnia kwartału: czerwony także wtedy, gdy zwroty obniżyły procent.
+    tlo, tekst = PROGI[0][1], PROGI[0][2]
+    ws.conditional_formatting.add(
+        zakres,
+        FormulaRule(
+            formula=[f'LEFT(${kolumna_ostrzezenia}{pierwszy_wiersz},18)="Limit przekroczony"'],
+            fill=PatternFill("solid", fgColor=tlo, bgColor=tlo),
+            font=Font(color=tekst, bold=True),
+            stopIfTrue=True,
+        ),
+    )
     for prog, tlo, tekst in PROGI:
         ws.conditional_formatting.add(
             zakres,
@@ -114,29 +135,35 @@ def zakladka_sprzedaz(wb: Workbook) -> None:
     ws["A1"] = "Ewidencja sprzedaży i limit działalności nierejestrowanej"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = ("Jeden wiersz = jedna sprzedaż. Wypełniasz kolumny A–E, szare kolumny liczą się same. "
-                "Zwrot wpisz jako kwotę ujemną. Jak znaleźć kurs NBP: zakładka „Instrukcja”.")
-    ws.merge_cells("A2:I2")
+                "Zwrot wpisz jako kwotę ujemną z datą dokumentu korekty (w kolumnie J możesz podać datę sprzedaży, "
+                "której dotyczy). Jak znaleźć kurs NBP: zakładka „Instrukcja”.")
+    ws.merge_cells("A2:J2")
     ws["A2"].alignment = ZAWIJAJ
     ws.row_dimensions[2].height = 34
     ws["A3"] = STOPKA
     ws["A3"].font = Font(size=9, color="5B616B")
     druk_poziomo(ws)
     naglowki(ws, 4, ["Data", "Opis", "Kwota", "Waluta", "Kurs NBP", "Kwota w PLN",
-                     "Suma kwartału (narastająco)", "% limitu", "Ostrzeżenie"])
+                     "Suma kwartału (narastająco)", "% limitu", "Ostrzeżenie", "Zwrot dotyczy sprzedaży z dnia"])
+    zakres_h = f"$H${PIERWSZY}:$H${OSTATNI}"
     zakres_f = f"$F${PIERWSZY}:$F${OSTATNI}"
     zakres_a = f"$A${PIERWSZY}:$A${OSTATNI}"
     for r in range(PIERWSZY, OSTATNI + 1):
         ws[f"A{r}"].number_format = FORMAT_DATY
         ws[f"C{r}"].number_format = FORMAT_KWOTY
         ws[f"E{r}"].number_format = "0.0000####"  # pełny kurs NBP (np. HUF 0,012115, IDR 0,00021529)
+        ws[f"J{r}"].number_format = FORMAT_DATY
         ws[f"F{r}"] = (f'=IF(C{r}="","",IF(OR(D{r}="",D{r}="PLN"),ROUND(C{r},2),'
                        f'IF(E{r}="","brak kursu",ROUND(C{r}*E{r},2))))')
         ws[f"G{r}"] = (f'=IF(OR(A{r}="",NOT(ISNUMBER(F{r}))),"",IF(NOT(ISNUMBER(A{r})),"sprawdź datę",'
                        f'SUMIFS({zakres_f},{zakres_a},">="&DATE(YEAR(A{r}),INT((MONTH(A{r})-1)/3)*3+1,1),'
                        f'{zakres_a},"<="&A{r})))')
+        # Procent limitu nie spada poniżej 0 (kwartał z samymi zwrotami).
         ws[f"H{r}"] = (f'=IF(NOT(ISNUMBER(G{r})),"",'
-                       f'IFERROR(G{r}/VLOOKUP(YEAR(A{r}),{LIMITY_ZAKRES},3,FALSE),"brak limitu"))')
-        ws[f"I{r}"] = (f'=IF(ISNUMBER(H{r}),{drabinka_ostrzezen(f"H{r}")},'
+                       f'IFERROR(MAX(0,G{r}/VLOOKUP(YEAR(A{r}),{LIMITY_ZAKRES},3,FALSE)),"brak limitu"))')
+        poczatek_kwartalu = f"DATE(YEAR(A{r}),INT((MONTH(A{r})-1)/3)*3+1,1)"
+        przekroczono = przekroczono_w_kwartale(zakres_h, zakres_a, poczatek_kwartalu, f"A{r}")
+        ws[f"I{r}"] = (f'=IF(ISNUMBER(H{r}),IF({przekroczono},"Limit przekroczony",{drabinka_ostrzezen(f"H{r}")}),'
                        f'IF(F{r}="brak kursu","Wpisz kurs NBP w kolumnie E",'
                        f'IF(G{r}="sprawdź datę","Wpisz datę jako dzień, np. 2026-10-21",'
                        f'IF(H{r}="brak limitu","Wpisz płacę minimalną na ten rok w zakładce Limity",""))))')
@@ -145,20 +172,24 @@ def zakladka_sprzedaz(wb: Workbook) -> None:
         ws[f"H{r}"].number_format = FORMAT_PROC
         for kol in "FGHI":
             ws[f"{kol}{r}"].fill = LICZONE_TLO
-    kolory_progow(ws, f"H{PIERWSZY}:I{OSTATNI}", "H", PIERWSZY)
+    kolory_progow(ws, f"H{PIERWSZY}:I{OSTATNI}", "H", PIERWSZY, "I")
     ws.conditional_formatting.add(
         f"F{PIERWSZY}:F{OSTATNI}",
         FormulaRule(formula=[f'$F{PIERWSZY}="brak kursu"'],
                     fill=PatternFill("solid", fgColor="FFE3C2", bgColor="FFE3C2"),
                     font=Font(color="7A3E00", bold=True)),
     )
-    for kol, szer in zip("ABCDEFGHI", (12, 34, 12, 9, 11, 14, 16, 10, 30)):
+    for kol, szer in zip("ABCDEFGHIJ", (12, 34, 12, 9, 11, 14, 16, 10, 30, 16)):
         ws.column_dimensions[kol].width = szer
     ws.freeze_panes = f"A{PIERWSZY}"
 
     dv_data = DataValidation(type="date", operator="between", formula1="DATE(2026,1,1)", formula2="DATE(2035,12,31)",
                              errorStyle="warning", showErrorMessage=True, allow_blank=True,
                              errorTitle="Data", error="Wpisz datę sprzedaży, np. 2026-10-21.")
+    dv_dotyczy = DataValidation(type="date", operator="between", formula1="DATE(2020,1,1)", formula2="DATE(2035,12,31)",
+                                errorStyle="warning", showErrorMessage=True, allow_blank=True,
+                                errorTitle="Zwrot dotyczy sprzedaży z dnia",
+                                error="Tylko przy zwrocie: data sprzedaży, której dotyczy zwrot, np. 2026-10-21.")
     dv_kwota = DataValidation(type="decimal", operator="between", formula1="-1000000", formula2="1000000",
                               errorStyle="warning", showErrorMessage=True, allow_blank=True,
                               errorTitle="Kwota", error="Wpisz kwotę liczbą, np. 49,90. Zwrot jako kwotę ujemną.")
@@ -168,7 +199,7 @@ def zakladka_sprzedaz(wb: Workbook) -> None:
     dv_kurs = DataValidation(type="decimal", operator="greaterThan", formula1="0",
                              errorStyle="warning", showErrorMessage=True, allow_blank=True,
                              errorTitle="Kurs NBP", error="Kurs to liczba większa od zera, np. 4,3641.")
-    for dv, kol in ((dv_data, "A"), (dv_kwota, "C"), (dv_waluta, "D"), (dv_kurs, "E")):
+    for dv, kol in ((dv_data, "A"), (dv_kwota, "C"), (dv_waluta, "D"), (dv_kurs, "E"), (dv_dotyczy, "J")):
         ws.add_data_validation(dv)
         dv.add(f"{kol}{PIERWSZY}:{kol}{OSTATNI}")
 
@@ -177,7 +208,8 @@ def zakladka_podsumowanie(wb: Workbook) -> None:
     ws = wb.create_sheet("Podsumowanie")
     ws["A1"] = "Podsumowanie kwartałów"
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = "Liczy się samo z zakładki „Sprzedaż”. Kolory: 70%, 85%, 95% i 100% limitu."
+    ws["A2"] = ("Liczy się samo z zakładki „Sprzedaż”. Kolory: 70%, 85%, 95% i 100% limitu. "
+                "Przekroczenie zostaje do końca kwartału, także gdy zwroty obniżą sumę.")
     druk_poziomo(ws)
     naglowki(ws, 4, ["Rok", "Kwartał", "Od", "Do", "Przychód", "Limit na kwartał", "% limitu",
                      "Zostało do limitu", "Ostrzeżenie"])
@@ -192,11 +224,13 @@ def zakladka_podsumowanie(wb: Workbook) -> None:
             ws[f"E{r}"] = (f'=SUMIFS({s}$F${PIERWSZY}:$F${OSTATNI},{s}$A${PIERWSZY}:$A${OSTATNI},">="&C{r},'
                            f'{s}$A${PIERWSZY}:$A${OSTATNI},"<="&D{r})')
             ws[f"F{r}"] = f'=IFERROR(VLOOKUP(A{r},{LIMITY_ZAKRES},3,FALSE),"")'
-            ws[f"G{r}"] = f'=IF(ISNUMBER(F{r}),E{r}/F{r},"")'
-            ws[f"H{r}"] = f'=IF(ISNUMBER(F{r}),F{r}-E{r},"")'
+            przekroczono = przekroczono_w_kwartale(f"{s}$H${PIERWSZY}:$H${OSTATNI}", f"{s}$A${PIERWSZY}:$A${OSTATNI}",
+                                                   f"C{r}", f"D{r}")
+            ws[f"G{r}"] = f'=IF(ISNUMBER(F{r}),MAX(0,E{r}/F{r}),"")'
+            ws[f"H{r}"] = f'=IF(ISNUMBER(F{r}),IF({przekroczono},0,MAX(0,F{r}-E{r})),"")'
             bez_kursu = (f'COUNTIFS({s}$F${PIERWSZY}:$F${OSTATNI},"brak kursu",{s}$A${PIERWSZY}:$A${OSTATNI},">="&C{r},'
                          f'{s}$A${PIERWSZY}:$A${OSTATNI},"<="&D{r})')
-            ws[f"I{r}"] = (f'=IF(ISNUMBER(G{r}),{drabinka_ostrzezen(f"G{r}")},'
+            ws[f"I{r}"] = (f'=IF(ISNUMBER(G{r}),IF({przekroczono},"Limit przekroczony",{drabinka_ostrzezen(f"G{r}")}),'
                            f'"Wpisz płacę minimalną na ten rok w zakładce Limity")'
                            f'&IF({bez_kursu}>0," · wierszy bez kursu NBP: "&{bez_kursu},"")')
             for kol, fmt in (("C", FORMAT_DATY), ("D", FORMAT_DATY), ("E", FORMAT_ZL), ("F", FORMAT_ZL),
@@ -205,7 +239,7 @@ def zakladka_podsumowanie(wb: Workbook) -> None:
             for kol in "ABCDEFGHI":
                 ws[f"{kol}{r}"].border = RAMKA
             r += 1
-    kolory_progow(ws, f"G5:I{r - 1}", "G", 5)
+    kolory_progow(ws, f"G5:I{r - 1}", "G", 5, "I")
     for kol, szer in zip("ABCDEFGHI", (7, 9, 12, 12, 14, 16, 10, 17, 30)):
         ws.column_dimensions[kol].width = szer
     ws.freeze_panes = "A5"
@@ -243,12 +277,12 @@ INSTRUKCJA = [
     ("1. W zakładce „Sprzedaż” wpisz każdą sprzedaż w osobnym wierszu: datę, krótki opis, kwotę i walutę.", ""),
     ("2. Sprzedaż w złotych: zostaw kolumnę „Kurs NBP” pustą. Sprzedaż w innej walucie: wpisz kurs NBP (niżej, jak go znaleźć).", ""),
     ("3. Szare kolumny liczą się same: kwota w PLN, suma kwartału narastająco, procent limitu i ostrzeżenie.", ""),
-    ("4. Zwrot pieniędzy klientowi wpisz jako kwotę ujemną z datą zwrotu.", ""),
+    ("4. Zwrot pieniędzy klientowi wpisz jako kwotę ujemną z datą dokumentu korekty (np. faktury korygującej albo potwierdzenia zwrotu pieniędzy). W kolumnie J możesz podać datę sprzedaży, której zwrot dotyczy; niczego nie przelicza.", ""),
     ("5. Zakładka „Podsumowanie” pokazuje każdy kwartał: przychód, limit, procent i ile zostało.", ""),
     ("", ""),
     ("Co znaczą kolory", "h"),
     ("Żółty: co najmniej 70% limitu. Pomarańczowy: co najmniej 85%. Jasnoczerwony: co najmniej 95%.", ""),
-    ("Czerwony: limit wykorzystany w 100% albo przekroczony.", ""),
+    ("Czerwony: limit wykorzystany w 100% albo przekroczony. Przekroczenie zostaje do końca kwartału, także gdy późniejszy zwrot obniży sumę.", ""),
     ("", ""),
     ("Jak znaleźć kurs średni NBP", "h"),
     ("Przychód w walucie obcej przelicza się na złote po kursie średnim NBP z ostatniego dnia roboczego przed dniem uzyskania przychodu (art. 11a ust. 1 ustawy o PIT).", ""),

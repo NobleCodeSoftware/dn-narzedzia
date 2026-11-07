@@ -1,4 +1,4 @@
-// CSV ewidencji: ten sam układ kolumn co zakładka „Sprzedaż” arkusza (A–I).
+// CSV ewidencji: ten sam układ kolumn co zakładka „Sprzedaż” arkusza (A–J).
 // Zapis dla polskiego Excela: średnik, przecinek dziesiętny, UTF-8 z BOM, CRLF.
 // Odczyt: średnik, przecinek albo tabulator (wykrywane z nagłówka), cudzysłowy według RFC 4180.
 
@@ -40,6 +40,7 @@ export function eksportujCsv(wpisy) {
       typeof G === 'bigint' ? liczbaPl(groszeNaTekst(G)) : G,
       procentPl(H),
       I,
+      w.dotyczy ?? '',
     ].map(pole).join(';'));
   });
   return `﻿${linie.join('\r\n')}\r\n`;

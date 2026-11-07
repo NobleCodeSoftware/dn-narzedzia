@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { opisProgu, klasaProgu, procentTekst, szczegolyWyniku, odczytajWpis, ogloszenieWyniku } from '../public/js/wspolne.js';
+import { opisProgu, klasaProgu, procentTekst, szczegolyWyniku, odczytajWpis, ogloszenieWyniku, tekstWylaczeniaPamieci } from '../public/js/wspolne.js';
 import { statusLimitu, formatujZl } from '../public/js/logic.js';
 
 test('opis i klasa progu 70/85/95/100%', () => {
@@ -68,4 +68,21 @@ test('termin CEIDG: D + 7 dni bez przesunięcia, dopisek o najbliższym dniu rob
 test('dopisek terminu na Boże Ciało i Poniedziałek Wielkanocny 2027', () => {
   assert.match(dopisekTerminu('2027-05-27'), /przesunąć się na 28\.05\.2027/);
   assert.match(dopisekTerminu('2027-03-29'), /przesunąć się na 30\.03\.2027/);
+});
+
+test('okno wyłączenia pamięci: o danych do faktur tylko wtedy, gdy mogą być zapisane; najwyżej 2 zdania', () => {
+  const zdania = (t) => 1 + [...t.matchAll(/[.!?]\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ])/g)].length;
+  const POCZATEK = 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury i zapamiętane przekroczenie limitu KSeF';
+  const DANE = ', a Twoje dane do faktur i zapisani klienci zostaną (decyduje o nich osobny przełącznik)';
+  assert.equal(tekstWylaczeniaPamieci({ daneZostaja: false, strona: 'ewidencja' }),
+    `${POCZATEK}. Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.`);
+  assert.equal(tekstWylaczeniaPamieci({ daneZostaja: true, strona: 'ewidencja' }),
+    `${POCZATEK}${DANE}. Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.`);
+  assert.equal(tekstWylaczeniaPamieci({ daneZostaja: false, strona: 'faktura' }),
+    `${POCZATEK}. Faktury z tej wizyty zostaną na stronie do jej zamknięcia.`);
+  assert.equal(tekstWylaczeniaPamieci({ daneZostaja: true, strona: 'faktura' }),
+    `${POCZATEK}${DANE}. Faktury z tej wizyty zostaną na stronie do jej zamknięcia.`);
+  for (const daneZostaja of [false, true]) {
+    for (const strona of ['ewidencja', 'faktura']) assert.ok(zdania(tekstWylaczeniaPamieci({ daneZostaja, strona })) <= 2);
+  }
 });

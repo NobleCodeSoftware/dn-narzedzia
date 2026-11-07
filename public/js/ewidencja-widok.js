@@ -3,7 +3,7 @@
 // Bez wstawiania HTML z tekstu: elementy budujemy przez createElement i textContent.
 
 import { BladDanych, dataWarszawa, formatujZl, kwartal, statusLimitu } from './logic.js';
-import { procentTekst, opisProgu, klasaProgu, dopisekTerminu } from './wspolne.js';
+import { procentTekst, opisProgu, klasaProgu, dopisekTerminu, tekstWylaczeniaPamieci } from './wspolne.js';
 import {
   normalizujWpis, kwotaPlnGr, posortuj, historiaKwartalow, prognoza, wierszeEwidencji, etykietaKwartalu,
   kluczKwartalu, granicaKwartalu, limitLubNull, niejednoznacznaKwota, opisNiejednoznacznejKwoty, polaczWpisy,
@@ -95,7 +95,9 @@ function pokazStanPliku(tekst) {
 const TEKST_NIEUDANEGO_ZAPISU = 'Nie udało się zapisać wpisów w pamięci przeglądarki. Zapisz plik XLSX albo CSV, żeby ich nie stracić.';
 
 function utrwal() {
-  if (stan.przyklad || !stan.pamietaj) return;
+  // Pamięć mogła zostać wyłączona w innej karcie, zanim ta karta obsłużyła zdarzenie storage: wtedy nic nie zapisujemy
+  // (magazyn.zapisz też to sprawdza) i nie pokazujemy komunikatu o nieudanym zapisie.
+  if (stan.przyklad || !stan.pamietaj || !magazyn.pamiecWlaczona()) return;
   stan.zapisNieudany = !magazyn.zapisz(stan.wpisy);
   if (stan.zapisNieudany) {
     pokazStanPliku(TEKST_NIEUDANEGO_ZAPISU);
@@ -451,10 +453,13 @@ function wartosciFormularza() {
   };
 }
 
-/** Przy zwrocie: etykieta „Data zwrotu”, podpowiedź o dacie dokumentu korekty i pole „dotyczy sprzedaży z dnia”. */
+/**
+ * Przy zwrocie: etykieta „Data dokumentu korekty” (nie data fizycznego zwrotu towaru), podpowiedź o tej dacie
+ * i pole „dotyczy sprzedaży z dnia”.
+ */
 function odswiezZwrot() {
   const zwrot = zwrotWFormularzu();
-  $('etykieta-data').textContent = zwrot ? 'Data zwrotu' : 'Data sprzedaży';
+  $('etykieta-data').textContent = zwrot ? 'Data dokumentu korekty' : 'Data sprzedaży';
   $('f-data-zwrot').hidden = !zwrot;
   $('pole-dotyczy').hidden = !zwrot;
 }
@@ -915,7 +920,7 @@ async function zmienPamiec() {
   }
   const odp = await zapytaj({
     tytul: 'Wyłączyć pamięć przeglądarki?',
-    tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury i zapamiętane przekroczenie limitu KSeF. Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.',
+    tekst: tekstWylaczeniaPamieci({ daneZostaja: magazyn.zostajaDaneFaktur(), strona: 'ewidencja' }),
     przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
   });
   if (!odp) { $('pamietaj').checked = true; return; }

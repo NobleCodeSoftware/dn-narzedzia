@@ -168,3 +168,46 @@ test('migracja: wyłączenie pamięci wpisów przed wyborem nie usuwa po cichu d
   magazyn.usunDaneFaktur();
   assert.deepEqual([...dane.keys()], [K.ustawienia]);
 }, STARY_ZAPIS()));
+
+// Pamięć wyłączona w innej karcie: karta z otwartym oknem może jeszcze mieć stan „włączona”. Zapis wpisów i faktur
+// czyta ustawienie w chwili zapisu, więc klucze usunięte przy wyłączeniu nie wracają.
+test('po wyłączeniu pamięci wpisów (także w innej karcie) zapisz i zapiszFaktury nic nie zapisują', () => zPamiecia((dane) => {
+  assert.equal(magazyn.zapisz([{ id: 'w1', data: '2026-10-01', kwota: '10' }]), true);
+  assert.equal(magazyn.zapiszFaktury({ faktury: [faktura('fa', '1/2026', '2026-10-05', '100')] }), true);
+  magazyn.usunWpisy(); // druga karta: „Wyłącz i usuń”
+  assert.equal(magazyn.zapisz([{ id: 'w2', data: '2026-10-02', kwota: '20' }]), false);
+  assert.equal(magazyn.zapiszFaktury({ faktury: [faktura('fb', '2/2026', '2026-10-06', '200')], utrataOd: '2026-10' }), false);
+  assert.deepEqual([...dane.keys()], [K.ustawienia], 'klucze wpisów i faktur nie wracają');
+  // To samo przy włączonym drugim przełączniku: pełne faktury nie wracają mimo zgody na dane osobowe.
+  magazyn.zmienUstawienia({ pamietajDane: true });
+  assert.equal(magazyn.zapiszFaktury({ faktury: [faktura('fc', '3/2026', '2026-10-07', '300')] }), false);
+  assert.equal(dane.has(K.faktury), false);
+  // Po ponownym włączeniu zapis działa.
+  magazyn.zmienUstawienia({ pamietaj: true });
+  assert.equal(magazyn.zapisz([{ id: 'w3', data: '2026-10-03', kwota: '30' }]), true);
+  assert.equal(json(dane, K.ewidencja).wpisy[0].id, 'w3');
+}));
+
+test('zostajaDaneFaktur: tylko przy włączonym zapamiętywaniu danych albo danych z wcześniejszej wersji przed wyborem', () => {
+  assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur()), false, 'domyślnie: nic do zachowania');
+  assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur(), { [K.ustawienia]: { pamietajDane: false } }), false);
+  assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur(), { [K.ustawienia]: { pamietajDane: true } }), true);
+  assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur(), STARY_ZAPIS()), true, 'dane 0.4.1 czekają na wybór');
+});
+
+// Klucze zapisywane przez opublikowane wersje strony: pierwsza wersja (kopia robocza ewidencji, domyślnie wyłączona),
+// od 0.3 wpisy i ustawienia (pamietaj, osoba), od 0.4 faktury z danymi sprzedawcy i klientów, od 0.4.2 osobny klucz
+// danych i ustawienie pamietajDane. Żadna wersja przed 0.4.2 nie zapisywała pamietajDane, więc stare ustawienia nie są
+// uznawane za zgodę na dane osobowe.
+test('dane starszych wersji: ustawienia 0.4.1 nie są zgodą, „Wyczyść dane” usuwa też kopię roboczą pierwszej wersji', () => zPamiecia((dane) => {
+  assert.deepEqual(magazyn.stanPamieciDanych(), { wlaczona: false, czekaNaWybor: true }, 'osoba z 0.4.1 to dana osobowa: wybór');
+  assert.equal(magazyn.pamiecDanychWlaczona(), false);
+  assert.equal(magazyn.pamiecWlaczona(), true);
+  magazyn.wyczysc();
+  assert.equal(dane.size, 0, [...dane.keys()].join(', '));
+}, {
+  [K.ewidencja]: { wersja: 1, zapisano: '2026-11-01T10:00:00.000Z', wpisy: [] },
+  [K.ustawienia]: { pamietaj: true, osoba: 'Anna Nowak' },
+  [magazyn.KLUCZE_NAJSTARSZEJ_WERSJI[0]]: { wiersze: [['2026-10-19', 'Sesja – Jan Kowalski', '300']], nazwa: 'ewidencja.csv' },
+  [magazyn.KLUCZE_NAJSTARSZEJ_WERSJI[1]]: '1',
+}));

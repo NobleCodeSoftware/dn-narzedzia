@@ -73,3 +73,16 @@ export function dopisekTerminu(termin) {
   if (czyDzienRoboczy(termin)) return '';
   return `Ten dzień jest wolny od pracy. Termin mógłby przesunąć się na ${dataPl(najblizszyDzienRoboczy(termin))}, ale przepisy tego nie przesądzają. Wniosek do CEIDG złożysz online także w dzień wolny, więc najbezpieczniej zrób to do ${dataPl(termin)}.`;
 }
+
+/**
+ * Treść okna „Wyłączyć pamięć przeglądarki?” (pierwszy przełącznik). Dane do faktur i klienci nie są usuwane, ale
+ * wspominamy o nich tylko wtedy, gdy mogą być w przeglądarce (zapamiętywanie danych włączone albo dane z wcześniejszej
+ * wersji czekają na wybór), żeby nie sugerować, że coś jest zapisane. strona: 'ewidencja' albo 'faktura'.
+ */
+export function tekstWylaczeniaPamieci({ daneZostaja, strona }) {
+  const dane = daneZostaja ? ', a Twoje dane do faktur i zapisani klienci zostaną (decyduje o nich osobny przełącznik)' : '';
+  const wizyta = strona === 'faktura'
+    ? 'Faktury z tej wizyty zostaną na stronie do jej zamknięcia.'
+    : 'Wpisy z tej wizyty zostaną na stronie do jej zamknięcia, więc zapisz plik.';
+  return `Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury i zapamiętane przekroczenie limitu KSeF${dane}. ${wizyta}`;
+}

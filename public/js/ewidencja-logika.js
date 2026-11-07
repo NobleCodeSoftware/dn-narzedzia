@@ -8,7 +8,7 @@ import {
 } from './logic.js';
 
 export const NAGLOWKI_ARKUSZA = ['Data', 'Opis', 'Kwota', 'Waluta', 'Kurs NBP', 'Kwota w PLN',
-  'Suma kwartału (narastająco)', '% limitu', 'Ostrzeżenie'];
+  'Suma kwartału (narastająco)', '% limitu', 'Ostrzeżenie', 'Zwrot dotyczy sprzedaży z dnia'];
 export const DNI_NA_WNIOSEK_CEIDG = 7;
 export const MAX_OPIS = 200;
 
@@ -77,7 +77,7 @@ export function normalizujWpis(w) {
   const dotyczy = String(w?.dotyczy ?? '').trim();
   if (kwota.startsWith('-') && dotyczy) {
     if (!poprawnaData(dotyczy)) throw new BladDanych('Podaj poprawną datę sprzedaży, której dotyczy zwrot.');
-    if (dotyczy > data) throw new BladDanych('Sprzedaż, której dotyczy zwrot, nie może być późniejsza niż data zwrotu.');
+    if (dotyczy > data) throw new BladDanych('Sprzedaż, której dotyczy zwrot, nie może być późniejsza niż data dokumentu korekty.');
     wynik.dotyczy = dotyczy;
   }
   if (typeof w?.zmieniono === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(w.zmieniono)) wynik.zmieniono = w.zmieniono;
@@ -458,14 +458,14 @@ const RE_ISO = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/;
 const RE_PL = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/;
 
 /** Data z arkusza: 'RRRR-MM-DD', 'DD.MM.RRRR', 'DD-MM-RRRR', 'DD/MM/RRRR' albo numer seryjny Excela. */
-export function odczytajDate(wartosc) {
-  if (typeof wartosc === 'number') return dataZSeryjnej(wartosc);
+export function odczytajDate(wartosc, system1904 = false) {
+  if (typeof wartosc === 'number') return dataZSeryjnej(wartosc, system1904);
   const t = String(wartosc ?? '').trim();
   let r; let m; let d;
   let x = RE_ISO.exec(t);
   if (x) [r, m, d] = [x[1], x[2], x[3]];
   else if ((x = RE_PL.exec(t))) [r, m, d] = [x[3], x[2], x[1]];
-  else if (/^\d{5}(\.\d+)?$/.test(t)) return dataZSeryjnej(Number(t));
+  else if (/^\d{5}(\.\d+)?$/.test(t)) return dataZSeryjnej(Number(t), system1904);
   else return null;
   const iso = `${r}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   return poprawnaData(iso) ? iso : null;
@@ -487,10 +487,13 @@ const norm = (t) => String(t ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 /**
  * Wiersze z pliku (tablice wartości: tekst albo liczba) → wpisy.
  * Szuka wiersza nagłówka („Data” … „Kwota”) w pierwszych 30 wierszach; bez nagłówka przyjmuje układ A–E.
+ * Kolumna „Zwrot dotyczy sprzedaży z dnia” (od wersji 0.4.4 kolumna J) jest nieobowiązkowa: pliki bez niej
+ * (wcześniejsze eksporty, inne programy) wczytują się jak dotąd, a wpisy nie mają pola dotyczy.
+ * Opcja system1904: numery seryjne dat w kolumnie „dotyczy” liczone od 1904 (XLSX, który tak deklaruje).
  * Zwraca { wpisy, bledy: [{ wiersz, powod }] }; numer wiersza jak w arkuszu (od 1).
  */
-export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1 } = {}) {
-  let kol = { data: 0, opis: 1, kwota: 2, waluta: 3, kurs: 4 };
+export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false } = {}) {
+  let kol = { data: 0, opis: 1, kwota: 2, waluta: 3, kurs: 4, dotyczy: -1 };
   let start = 0;
   for (let i = 0; i < Math.min(wiersze.length, 30); i += 1) {
     const h = (wiersze[i] ?? []).map(norm);
@@ -498,7 +501,8 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1 } = {}) {
     const iKwota = h.findIndex((x) => x === 'kwota' || x === 'kwota sprzedaży');
     if (iData >= 0 && iKwota >= 0) {
       const znajdz = (...nazwy) => h.findIndex((x) => nazwy.includes(x));
-      kol = { data: iData, opis: znajdz('opis'), kwota: iKwota, waluta: znajdz('waluta'), kurs: znajdz('kurs nbp', 'kurs') };
+      kol = { data: iData, opis: znajdz('opis'), kwota: iKwota, waluta: znajdz('waluta'), kurs: znajdz('kurs nbp', 'kurs'),
+        dotyczy: h.findIndex((x) => (x ?? '').startsWith('zwrot dotyczy') || x === 'dotyczy') };
       start = i + 1;
       break;
     }
@@ -517,9 +521,13 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1 } = {}) {
     let opis = String(komorka(kol.opis));
     if (/^'[=+\-@]/.test(opis)) opis = opis.slice(1); // ochrona przed formułami z naszego eksportu CSV
     if (niejednoznacznaKwota(surowaKwota)) { bledy.push({ wiersz: numer, powod: opisNiejednoznacznejKwoty(surowaKwota) }); continue; }
+    // Data, której dotyczy zwrot: nieczytelną przekazujemy dalej, żeby normalizujWpis zgłosił błąd wiersza.
+    const surowaDotyczy = komorka(kol.dotyczy);
+    const dotyczy = String(surowaDotyczy).trim() === '' ? '' : (odczytajDate(surowaDotyczy, system1904) ?? String(surowaDotyczy));
     try {
       wpisy.push(normalizujWpis({
         id: `i${wpisy.length + 1}`, data, opis, kwota: surowaKwota, waluta: String(komorka(kol.waluta)) || 'PLN', kurs: komorka(kol.kurs),
+        dotyczy,
       }));
     } catch (e) {
       if (!(e instanceof BladDanych)) throw e;

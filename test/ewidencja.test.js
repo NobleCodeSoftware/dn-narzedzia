@@ -291,11 +291,11 @@ const PROBKA = () => [
 ];
 const bezId = (lista) => lista.map(({ id, kursData, kursTabela, ...r }) => r);
 
-test('CSV: eksport w układzie arkusza (A–I), średnik, przecinek, BOM, ochrona przed formułami', () => {
+test('CSV: eksport w układzie arkusza (A–J), średnik, przecinek, BOM, ochrona przed formułami', () => {
   const csv = eksportujCsv(PROBKA());
-  assert.ok(csv.startsWith('﻿Data;Opis;Kwota;Waluta;Kurs NBP;Kwota w PLN;Suma kwartału (narastająco);% limitu;Ostrzeżenie\r\n'));
+  assert.ok(csv.startsWith('﻿Data;Opis;Kwota;Waluta;Kurs NBP;Kwota w PLN;Suma kwartału (narastająco);% limitu;Ostrzeżenie;Zwrot dotyczy sprzedaży z dnia\r\n'));
   const wiersze = parsujCsv(csv);
-  assert.deepEqual(wiersze[1], ['2026-10-01', 'Kolczyki; srebro', '120,50', 'PLN', '', '120,50', '120,50', '1,1%', 'W limicie']);
+  assert.deepEqual(wiersze[1], ['2026-10-01', 'Kolczyki; srebro', '120,50', 'PLN', '', '120,50', '120,50', '1,1%', 'W limicie', '']);
   assert.deepEqual(wiersze[2].slice(0, 7), ['2026-10-03', 'Etsy "zamówienie" 1234', '35', 'EUR', '4,3712', '152,99', '253,49']);
   assert.equal(wiersze[3][1], "'=zwrot");
   assert.equal(wiersze[4][5], 'brak kursu');
@@ -501,7 +501,7 @@ test('zwroty: zwrot w I kw. 2027 dotyczący sprzedaży z IV kw. 2026 daje ostrze
   assert.match(opisOstrzezeniaZwrotu(ostrzezeniaZwrotow(duze, '2027-02-01')[0]), /Bez niego limit byłby przekroczony dnia 05\.01\.2027\./);
 });
 
-test('zwroty: pole „dotyczy sprzedaży z dnia” tylko przy zwrocie i nie później niż data zwrotu', () => {
+test('zwroty: pole „dotyczy sprzedaży z dnia” tylko przy zwrocie i nie później niż data dokumentu korekty', () => {
   assert.throws(() => normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '-300', dotyczy: '2027-01-11' }), /nie może być późniejsza/);
   assert.throws(() => normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '-300', dotyczy: '2027-02-30' }), /dotyczy zwrot/);
   assert.equal('dotyczy' in normalizujWpis({ id: 'a', data: '2027-01-10', kwota: '300', dotyczy: '2026-12-01' }), false, 'sprzedaż: pole pomijane');
@@ -631,4 +631,108 @@ test('zwrot przed przekroczeniem: suma równa limitowi bez przekroczenia, ostrze
   assert.equal(p.przekroczenie.prognoza, true);
   assert.equal(p.przyczynaPrzekroczenia, 'tempo');
   assert.equal(wartosciArkusza(posortuj(wpisy))[2].I, 'Limit wykorzystany (100%)');
+});
+
+// ---------------------------------------------------------------- pole „dotyczy” w pliku (kolumna J)
+
+const zwrotDotyczacy = () => normalizujWpis({ id: 'z1', data: '2027-01-15', kwota: '-300', opis: 'Zwrot: obraz', dotyczy: '2026-12-20' });
+const zDotyczy = () => [w('2026-12-20', '1000', 'PLN', '', 'Obraz'), zwrotDotyczacy()];
+const ostrzezeniaInnegoKwartalu = (wpisy) => ostrzezeniaZwrotow(wpisy, '2027-01-20').filter((o) => o.przyczyna === 'inny-kwartal');
+
+test('CSV: data, której dotyczy zwrot, jest w kolumnie J i wraca przy imporcie z ostrzeżeniem', () => {
+  const wiersze = parsujCsv(eksportujCsv(zDotyczy()));
+  assert.equal(wiersze[0][9], 'Zwrot dotyczy sprzedaży z dnia');
+  assert.deepEqual(wiersze.slice(1).map((r) => r[9]), ['', '2026-12-20']);
+  const { wpisy, bledy } = importujCsv(eksportujCsv(zDotyczy()));
+  assert.deepEqual(bledy, []);
+  assert.deepEqual(bezId(wpisy), bezId(zDotyczy()));
+  assert.equal(wpisy[1].dotyczy, '2026-12-20');
+  assert.equal(ostrzezeniaInnegoKwartalu(wpisy).length, 1, 'ostrzeżenie o zwrocie z innego kwartału zostaje');
+});
+
+test('XLSX: data, której dotyczy zwrot, jest w kolumnie J (data) i wraca przy imporcie z ostrzeżeniem', async () => {
+  const plik = await eksportujXlsx(zDotyczy(), WZOR);
+  const xml = new TextDecoder().decode((await czytajZip(plik)).get('xl/worksheets/sheet1.xml'));
+  const komorki = komorkiArkusza(xml, []);
+  assert.equal(komorki[3][9], 'Zwrot dotyczy sprzedaży z dnia');
+  assert.equal(komorki[4][9] ?? '', '');
+  assert.equal(komorki[5][9], 46376, 'numer seryjny 2026-12-20');
+  assert.match(xml, /<c r="J6" s="5"><v>46376<\/v><\/c>/, 'styl daty z wzoru');
+  const { wpisy, bledy } = await importujXlsx(plik);
+  assert.deepEqual(bledy, []);
+  assert.equal(wpisy[1].dotyczy, '2026-12-20');
+  assert.equal(ostrzezeniaInnegoKwartalu(wpisy).length, 1);
+});
+
+test('import: pliki bez kolumny J (wcześniejsze eksporty) wczytują się jak dotąd, błędna data J to błąd wiersza', async () => {
+  const stary = '﻿Data;Opis;Kwota;Waluta;Kurs NBP;Kwota w PLN;Suma kwartału (narastająco);% limitu;Ostrzeżenie\r\n'
+    + '2027-01-15;Zwrot;-300;PLN;;-300,00;-300,00;0,0%;W limicie\r\n';
+  const { wpisy, bledy } = importujCsv(stary);
+  assert.deepEqual(bledy, []);
+  assert.deepEqual(bezId(wpisy), [{ data: '2027-01-15', opis: 'Zwrot', kwota: '-300', waluta: 'PLN', kurs: '' }]);
+  assert.equal('dotyczy' in wpisy[0], false);
+  // Bez nagłówka (układ A–E) kolumny J nie czytamy.
+  assert.equal('dotyczy' in importujCsv('2027-01-15;Zwrot;-300;PLN;;;;;;2026-12-20\r\n').wpisy[0], false);
+  // XLSX z innego programu, bez kolumny J.
+  const wb = '<workbook xmlns:r="r"><sheets><sheet name="Sprzedaż" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  const rels = '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>';
+  const arkusz = '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Data</t></is></c><c r="C1" t="inlineStr"><is><t>Kwota</t></is></c></row>'
+    + '<row r="2"><c r="A2"><v>46402</v></c><c r="C2"><v>-300</v></c></row></sheetData></worksheet>';
+  const x = await importujXlsx(await zapiszZip(new Map([['xl/workbook.xml', wb], ['xl/_rels/workbook.xml.rels', rels], ['xl/worksheets/sheet1.xml', arkusz]])));
+  assert.deepEqual(x.bledy, []);
+  assert.equal('dotyczy' in x.wpisy[0], false);
+  // Kolumna J z błędną datą albo datą późniejszą niż zwrot: błąd wiersza, a nie cicha utrata pola.
+  const naglowek = 'Data;Opis;Kwota;Waluta;Kurs NBP;Kwota w PLN;Suma kwartału (narastająco);% limitu;Ostrzeżenie;Zwrot dotyczy sprzedaży z dnia\r\n';
+  const bledne = importujCsv(`${naglowek}2027-01-15;a;-300;PLN;;;;;;wczoraj\r\n2027-01-15;b;-300;PLN;;;;;;2027-01-16\r\n2027-01-15;c;-300;PLN;;;;;;20.12.2026\r\n`);
+  assert.deepEqual(bledne.bledy.map((b) => b.wiersz), [2, 3]);
+  assert.match(bledne.bledy[0].powod, /dotyczy zwrot/);
+  assert.match(bledne.bledy[1].powod, /nie może być późniejsza/);
+  assert.equal(bledne.wpisy[0].dotyczy, '2026-12-20', 'polski zapis daty też działa');
+  // Przy sprzedaży (kwota dodatnia) pole jest pomijane, jak w formularzu.
+  assert.equal('dotyczy' in importujCsv(`${naglowek}2027-01-15;d;300;PLN;;;;;;2026-12-20\r\n`).wpisy[0], false);
+});
+
+// ---------------------------------------------------------------- formuły wzoru XLSX (H i I jak na stronie)
+
+const formula = (xml, adres) => {
+  const m = new RegExp(`<c [^>]*r="${adres}"[^>]*><f>([^<]*)</f>`).exec(xml);
+  return m ? m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#380;/g, 'ż') : null;
+};
+
+test('wzór XLSX: H nie spada poniżej 0, I pamięta przekroczenie w kwartale (zakładka „Sprzedaż”)', async () => {
+  const pliki = await czytajZip(WZOR);
+  const s1 = new TextDecoder().decode(pliki.get('xl/worksheets/sheet1.xml'));
+  assert.equal(formula(s1, 'H5'), 'IF(NOT(ISNUMBER(G5)),"",IFERROR(MAX(0,G5/VLOOKUP(YEAR(A5),Limity!$A$5:$C$14,3,FALSE)),"brak limitu"))');
+  const i5 = formula(s1, 'I5');
+  assert.ok(i5.startsWith('IF(ISNUMBER(H5),IF(COUNTIFS($H$5:$H$1004,">1",$A$5:$A$1004,">="&DATE(YEAR(A5),INT((MONTH(A5)-1)/3)*3+1,1),'
+    + '$A$5:$A$1004,"<="&A5)>0,"Limit przekroczony",IF(H5>1,"Limit przekroczony"'), i5);
+  assert.ok(formula(s1, 'I1004').includes('COUNTIFS($H$5:$H$1004,">1",$A$5:$A$1004,">="&DATE(YEAR(A1004),'), 'każdy wiersz');
+  assert.ok(!/MAXIFS|_xlfn/.test(s1), 'bez funkcji spoza Excela 2010');
+  // Czerwony kolor także dla przekroczenia z wcześniejszego dnia (procent mógł spaść przez zwrot).
+  assert.match(s1, /<conditionalFormatting sqref="H5:I1004"><cfRule type="expression" priority="1" dxfId="0" stopIfTrue="1"><formula>LEFT\(\$I5,18\)="Limit przekroczony"<\/formula>/);
+  const komorki = komorkiArkusza(s1, []);
+  assert.equal(komorki[3][9], 'Zwrot dotyczy sprzedaży z dnia');
+  assert.match(/<dataValidation\b[^>]*sqref="J5:J1004"[^>]*>/.exec(s1)?.[0] ?? '', /type="date"/);
+});
+
+test('wzór XLSX: podsumowanie kwartału bez ujemnego procentu i z pamięcią przekroczenia', async () => {
+  const s2 = new TextDecoder().decode((await czytajZip(WZOR)).get('xl/worksheets/sheet2.xml'));
+  const warunek = 'COUNTIFS(\'Sprzedaż\'!$H$5:$H$1004,">1",\'Sprzedaż\'!$A$5:$A$1004,">="&C5,\'Sprzedaż\'!$A$5:$A$1004,"<="&D5)>0';
+  assert.equal(formula(s2, 'G5'), 'IF(ISNUMBER(F5),MAX(0,E5/F5),"")');
+  assert.equal(formula(s2, 'H5'), `IF(ISNUMBER(F5),IF(${warunek},0,MAX(0,F5-E5)),"")`);
+  assert.ok(formula(s2, 'I5').startsWith(`IF(ISNUMBER(G5),IF(${warunek},"Limit przekroczony",`), formula(s2, 'I5'));
+  assert.match(s2, /<formula>LEFT\(\$I5,18\)="Limit przekroczony"<\/formula>/);
+});
+
+test('XLSX: ponad 1000 wpisów rozszerza także zakres H w warunku przekroczenia i kolumnę J', async () => {
+  const duzo = Array.from({ length: 1003 }, (_, i) => w(i % 2 ? '2026-10-02' : '2026-10-01', '1'));
+  const pliki = await czytajZip(await eksportujXlsx(duzo, WZOR));
+  const s1 = new TextDecoder().decode(pliki.get('xl/worksheets/sheet1.xml'));
+  const s2 = new TextDecoder().decode(pliki.get('xl/worksheets/sheet2.xml'));
+  assert.match(s1, /<dimension ref="A1:J1007"\/>/);
+  assert.ok(formula(s1, 'I1007').includes('COUNTIFS($H$5:$H$1007,">1",$A$5:$A$1007,">="&DATE(YEAR(A1007),'), formula(s1, 'I1007'));
+  assert.match(s1, /sqref="J5:J1007"/);
+  assert.match(s1, /sqref="H5:I1007"/);
+  assert.match(s1, /<c r="J1007" s="5"\/>/);
+  assert.ok(formula(s2, 'I5').includes("COUNTIFS('Sprzedaż'!$H$5:$H$1007,\">1\""));
 });

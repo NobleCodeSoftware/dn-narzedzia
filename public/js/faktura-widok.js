@@ -4,6 +4,7 @@
 
 import { BladDanych, dataWarszawa, formatujZl, naGrosze } from './logic.js';
 import { normalizujWpis } from './ewidencja-logika.js';
+import { tekstWylaczeniaPamieci } from './wspolne.js';
 import {
   normalizujFakture, proponowanyNumer, numerZajety, moznaUsunac, regulaKsef, opisKsef, dokumentFaktury, terminy,
   dodajFaktureDoEwidencji, dopiszNabywce, wartoscPozycjiGr, slownie, sprawdzNip, nipZKreskami, dataPl, MAX_POZYCJI,
@@ -382,10 +383,21 @@ function odswiez() {
   return r;
 }
 
+/**
+ * Zdejmuje oznaczenie błędu z pól formularza. Pole „inne faktury” zostaje oznaczone, dopóki widać jego komunikat
+ * (#inne-blad), bo ten błąd zależy od treści pola, a nie od ostatniej próby wystawienia.
+ */
+function zdejmijOznaczeniaBledow() {
+  for (const e of $('faktura-form').querySelectorAll('[aria-invalid]')) {
+    if (e.id === 'f-inne' && !$('inne-blad').hidden) continue;
+    e.removeAttribute('aria-invalid');
+  }
+}
+
 function pokazBlad(tekst, pole) {
   $('form-blad').textContent = tekst;
   $('form-blad').hidden = !tekst;
-  for (const e of $('faktura-form').querySelectorAll('[aria-invalid]')) e.removeAttribute('aria-invalid');
+  zdejmijOznaczeniaBledow();
   if (pole) {
     const mapa = {
       dataWystawienia: 'f-data-sprzedazy', dataSprzedazy: 'f-data-sprzedazy', numer: 'f-numer', sprzedawcaNazwa: 'f-sprzedawca-nazwa',
@@ -614,7 +626,7 @@ async function zmienPamiec() {
   } else {
     const odp = await zapytaj({
       tytul: 'Wyłączyć pamięć przeglądarki?',
-      tekst: 'Usuniemy z tej przeglądarki wpisy ewidencji, wystawione faktury i zapamiętane przekroczenie limitu KSeF. Faktury z tej wizyty zostaną na stronie do jej zamknięcia.',
+      tekst: tekstWylaczeniaPamieci({ daneZostaja: magazyn.zostajaDaneFaktur(), strona: 'faktura' }),
       przyciski: [{ tekst: 'Anuluj', wynik: false, domyslny: true }, { tekst: 'Wyłącz i usuń', wynik: true, klasa: 'niebezpieczny' }],
     });
     if (!odp) { $('pamietaj').checked = true; return; }
@@ -761,7 +773,7 @@ function start() {
   const schowajPotwierdzenie = () => {
     $('potwierdzenie').hidden = true;
     $('form-blad').hidden = true;
-    for (const e of $('faktura-form').querySelectorAll('[aria-invalid]')) e.removeAttribute('aria-invalid');
+    zdejmijOznaczeniaBledow();
   };
   $('faktura-form').addEventListener('input', schowajPotwierdzenie);
   $('faktura-form').addEventListener('change', schowajPotwierdzenie);

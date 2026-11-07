@@ -1,6 +1,6 @@
 // Odczyt i zapis XLSX bez bibliotek, tylko w zakresie potrzebnym ewidencji.
 // Odczyt: zakładka „Sprzedaż” (albo pierwsza), wartości komórek (liczby, teksty współdzielone i wbudowane).
-// Zapis: wypełnia kolumny A–E naszego arkusza-wzoru (/pobierz/arkusz-limit-dn.xlsx) i zapisuje wyliczone
+// Zapis: wypełnia kolumny A–E i J naszego arkusza-wzoru (/pobierz/arkusz-limit-dn.xlsx) i zapisuje wyliczone
 // wartości formuł F–I, więc plik wygląda tak samo jak pobrany arkusz, z tymi samymi formułami i kolorami.
 
 import { BladDanych, groszeNaTekst } from './logic.js';
@@ -96,7 +96,7 @@ export async function importujXlsx(dane) {
   const wiersze = komorkiArkusza(dekoder.decode(xml), wspolne);
   // Kolumna z datą: liczby to numery seryjne Excela (z uwzględnieniem systemu 1904).
   const przeliczone = wiersze.map((w) => w.map((v, i) => (i === 0 && typeof v === 'number' && v > 59 ? dataZSeryjnej(v, system1904) : v)));
-  return { ...wierszeNaWpisy(przeliczone), arkusz: nazwa };
+  return { ...wierszeNaWpisy(przeliczone, { system1904 }), arkusz: nazwa };
 }
 
 // ------------------------------------------------------------ zapis
@@ -119,7 +119,7 @@ function wartoscFormuly(xmlKomorki, wartosc) {
   return `${otwarcie}${wnetrze}${v}</c>`;
 }
 
-/** Podmienia komórki A–I w wierszu wzoru. */
+/** Podmienia komórki A–J w wierszu wzoru (J: data sprzedaży, której dotyczy zwrot, albo pusta). */
 function wypelnijWiersz(xmlWiersza, nr, wpis, wart) {
   const komorki = new Map();
   for (const m of xmlWiersza.matchAll(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g)) {
@@ -134,6 +134,7 @@ function wypelnijWiersz(xmlWiersza, nr, wpis, wart) {
   nowe.set(2, { xml: komorkaWartosci(`C${nr}`, styl(2), liczba(wpis.kwota)) });
   nowe.set(3, { xml: komorkaWartosci(`D${nr}`, styl(3), wpis.waluta) });
   nowe.set(4, { xml: komorkaWartosci(`E${nr}`, styl(4), wpis.kurs ? liczba(wpis.kurs) : '') });
+  if (wpis.dotyczy || komorki.has(9)) nowe.set(9, { xml: komorkaWartosci(`J${nr}`, styl(9), wpis.dotyczy ? seryjnaZDaty(wpis.dotyczy) : '') });
   const wartosci = [
     typeof wart.F === 'bigint' ? Number(groszeNaTekst(wart.F)) : wart.F,
     typeof wart.G === 'bigint' ? Number(groszeNaTekst(wart.G)) : wart.G,
@@ -155,8 +156,8 @@ function wypelnijWiersz(xmlWiersza, nr, wpis, wart) {
 function rozszerzWzor(xmlSprzedaz, xmlInne, ostatni) {
   const zakresy = (x) => x
     .replace(/\$1004(?!\d)/g, () => `$${ostatni}`)
-    .replace(/([A-I]\$?)5:(\$?[A-I]\$?)1004(?!\d)/g, (_, a, b) => `${a}5:${b}${ostatni}`)
-    .replace(/<dimension ref="A1:I1004"\/>/, () => `<dimension ref="A1:I${ostatni}"/>`);
+    .replace(/([A-J]\$?)5:(\$?[A-J]\$?)1004(?!\d)/g, (_, a, b) => `${a}5:${b}${ostatni}`)
+    .replace(/<dimension ref="A1:([A-Z]+)1004"\/>/, (_, k) => `<dimension ref="A1:${k}${ostatni}"/>`);
   let s = zakresy(xmlSprzedaz);
   const m = /<row r="1004"[\s\S]*?<\/row>/.exec(s);
   if (!m) throw new BladDanych('Nieoczekiwany układ arkusza-wzoru.');
