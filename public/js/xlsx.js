@@ -5,7 +5,7 @@
 
 import { BladDanych, groszeNaTekst } from './logic.js';
 import { czytajZip, zapiszZip } from './zip.js';
-import { posortuj, wartosciArkusza, wierszeNaWpisy, seryjnaZDaty, dataZSeryjnej } from './ewidencja-logika.js';
+import { posortuj, wartosciArkusza, wierszeNaWpisy, seryjnaZDaty } from './ewidencja-logika.js';
 
 export const ARKUSZ_SPRZEDAZ = 'Sprzedaż';
 export const PIERWSZY_WIERSZ = 5;
@@ -94,9 +94,9 @@ export async function importujXlsx(dane) {
   const sst = pliki.get('xl/sharedStrings.xml');
   const wspolne = sst ? [...dekoder.decode(sst).matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => tekstyT(m[1])) : [];
   const wiersze = komorkiArkusza(dekoder.decode(xml), wspolne);
-  // Kolumna z datą: liczby to numery seryjne Excela (z uwzględnieniem systemu 1904).
-  const przeliczone = wiersze.map((w) => w.map((v, i) => (i === 0 && typeof v === 'number' && v > 59 ? dataZSeryjnej(v, system1904) : v)));
-  return { ...wierszeNaWpisy(przeliczone, { system1904 }), arkusz: nazwa };
+  // Liczby w kolumnach dat to numery seryjne Excela: wierszeNaWpisy przelicza je w każdej kolumnie dat (data sprzedaży
+  // i data, której dotyczy zwrot) jedną ścieżką, z uwzględnieniem systemu 1904.
+  return { ...wierszeNaWpisy(wiersze, { system1904 }), arkusz: nazwa };
 }
 
 // ------------------------------------------------------------ zapis

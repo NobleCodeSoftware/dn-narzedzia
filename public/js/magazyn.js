@@ -121,12 +121,18 @@ export function stanPamieciDanych() {
 }
 
 /**
- * Czy w przeglądarce mogą być dane do faktur (sprzedawca, klienci), które zostają po wyłączeniu pamięci wpisów:
- * zapamiętywanie danych włączone albo dane z wcześniejszej wersji czekają na wybór.
+ * Czy w przeglądarce mogą być dane do faktur (sprzedawca, klienci), które zostają po wyłączeniu pamięci wpisów
+ * (usunWpisy): zapamiętywanie danych włączone albo dane z wcześniejszej wersji czekają na wybór i nie znikną razem
+ * z fakturami. Zostają dane sprzedawcy i klientów (ich klucz albo pola w kluczu faktur, które usunWpisy najpierw
+ * przenosi) i imię do wydruku. Pełne faktury z wcześniejszej wersji znikają razem z kluczem faktur, więc same
+ * nie są powodem, żeby mówić, że dane zostaną.
  */
 export function zostajaDaneFaktur() {
   const s = stanPamieciDanych();
-  return s.wlaczona || s.czekaNaWybor;
+  if (s.wlaczona) return true;
+  if (!s.czekaNaWybor) return false;
+  const osoba = wczytajUstawienia().osoba;
+  return maDane(czytajJson(KLUCZ_DANE)) || maDane(czytajJson(KLUCZ_FAKTURY)) || (typeof osoba === 'string' && osoba !== '');
 }
 
 /** Czy wolno zapisywać dane osobowe do faktur: tylko po włączeniu przez użytkownika. */

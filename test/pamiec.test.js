@@ -195,6 +195,25 @@ test('zostajaDaneFaktur: tylko przy włączonym zapamiętywaniu danych albo dany
   assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur(), STARY_ZAPIS()), true, 'dane 0.4.1 czekają na wybór');
 });
 
+test('zostajaDaneFaktur: same pełne faktury z wcześniejszej wersji znikają razem z wpisami, więc nic nie zostaje', () => {
+  const tylkoFaktury = () => ({
+    [K.faktury]: { wersja: 1, zapisano: '2026-11-01T10:00:00.000Z', faktury: [JSON.parse(JSON.stringify(pelna041()))], utrataOd: null },
+    [K.ustawienia]: { pamietaj: true },
+  });
+  zPamiecia((dane) => {
+    assert.deepEqual(magazyn.stanPamieciDanych(), { wlaczona: false, czekaNaWybor: true });
+    assert.equal(magazyn.zostajaDaneFaktur(), false, 'okno nie może obiecywać, że dane do faktur zostaną');
+    magazyn.usunWpisy();
+    assert.deepEqual([...dane.keys()], [K.ustawienia], 'po usunięciu wpisów rzeczywiście nic nie zostaje');
+  }, tylkoFaktury());
+  // Imię do wydruku albo dane w osobnym kluczu zostają po usunięciu wpisów.
+  const zImieniem = tylkoFaktury();
+  zImieniem[K.ustawienia].osoba = 'Anna Nowak';
+  assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur(), zImieniem), true);
+  const zKluczemDanych = { ...tylkoFaktury(), [K.dane]: { wersja: 1, sprzedawca: SPRZEDAWCA, nabywcy: [] } };
+  assert.equal(zPamiecia(() => magazyn.zostajaDaneFaktur(), zKluczemDanych), true);
+});
+
 // Klucze zapisywane przez opublikowane wersje strony: pierwsza wersja (kopia robocza ewidencji, domyślnie wyłączona),
 // od 0.3 wpisy i ustawienia (pamietaj, osoba), od 0.4 faktury z danymi sprzedawcy i klientów, od 0.4.2 osobny klucz
 // danych i ustawienie pamietajDane. Żadna wersja przed 0.4.2 nie zapisywała pamietajDane, więc stare ustawienia nie są

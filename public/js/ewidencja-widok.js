@@ -756,7 +756,7 @@ async function wczytajPlik(plik) {
   let wynik;
   try {
     const nazwa = plik.name.toLowerCase();
-    if (nazwa.endsWith('.csv') || plik.type === 'text/csv') wynik = importujCsv(await plik.text());
+    if (nazwa.endsWith('.csv') || plik.type === 'text/csv') wynik = importujCsv(new Uint8Array(await plik.arrayBuffer())); // kodowanie rozpoznaje dekodujCsv
     else wynik = await importujXlsx(new Uint8Array(await plik.arrayBuffer()));
   } catch (e) {
     const t = `Nie udało się wczytać pliku. ${e instanceof BladDanych ? e.message : 'Sprawdź, czy to arkusz XLSX albo CSV.'}`;

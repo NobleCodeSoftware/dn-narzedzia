@@ -92,17 +92,26 @@ export function tekstLiczby(wartosc) {
     const t = wartosc.toFixed(8).replace(/\.?0+$/, '');
     return t === '-0' ? '0' : t;
   }
-  let t = String(wartosc ?? '').trim().replace(/[\s  ]/g, '').replace(/(zł|pln)$/i, '').replace(/^\+/, '');
+  const zSpacjami = String(wartosc ?? '').trim().replace(/\s*(zł|pln)$/i, '');
+  // Spacje (także twarde) tylko jako separator tysięcy: „1 234,50” tak, „12 34,5” nie.
+  if (/\s/.test(zSpacjami) && !/^[+\-−]?\d{1,3}(\s\d{3})+([.,]\d+)?$/.test(zSpacjami)) throw new BladDanych('liczba');
+  let t = zSpacjami.replace(/\s/g, '').replace(/^\+/, '');
   t = t.replace(/^−/, '-');
   const przecinek = t.lastIndexOf(',');
   const kropka = t.lastIndexOf('.');
+  // Separator tysięcy tylko co trzy cyfry od pierwszej grupy 1–3 cyfr: „1,234,5” i „1.23,45” to błąd, a nie 12345.
+  const grupyTysiecy = (calosc, sep) => new RegExp(`^-?\\d{1,3}(\\${sep}\\d{3})+$`).test(calosc);
   if (przecinek >= 0 && kropka >= 0) {
     const dziesietny = przecinek > kropka ? ',' : '.';
     const tysiace = dziesietny === ',' ? '.' : ',';
+    const i = t.lastIndexOf(dziesietny);
+    if (t.indexOf(dziesietny) !== i || !grupyTysiecy(t.slice(0, i), tysiace)) throw new BladDanych('liczba');
     t = t.split(tysiace).join('').replace(dziesietny, '.');
   } else if (przecinek >= 0) {
+    if (t.match(/,/g).length > 1 && !grupyTysiecy(t, ',')) throw new BladDanych('liczba');
     t = (t.match(/,/g).length > 1 ? t.split(',').join('') : t.replace(',', '.'));
   } else if (kropka >= 0 && t.match(/\./g).length > 1) {
+    if (!grupyTysiecy(t, '.')) throw new BladDanych('liczba');
     t = t.split('.').join('');
   }
   const { v, s } = parsujDziesietna(t);
@@ -204,7 +213,8 @@ export function kwotaProgu(limitGr, prog) {
  * a nadwyżka zwrotów nie przechodzi do innych kwartałów.
  * dzis (opcjonalnie): sprzedaż z późniejszą datą nie wchodzi do sumy, stanu ani daty przekroczenia,
  * tylko do zaplanowaneGr i zaplanowane (liczba wpisów). Bez dzis liczy wszystkie wpisy, jak arkusz.
- * Z planem (prognoza): statusZPlanem (sprzedaż do dziś i zaplanowana), wolneGr (limit minus jedno i drugie, co najmniej 0)
+ * Z planem (prognoza): statusZPlanem (sprzedaż do dziś i zaplanowana), wolneGr (limit minus jedno i drugie, co najmniej 0;
+ * po przekroczeniu 0)
  * i prognozaPrzekroczenia, gdy limit przekroczy dopiero zaplanowana sprzedaż.
  */
 export function historiaKwartalow(wpisy, dzis = null) {
@@ -234,7 +244,8 @@ export function historiaKwartalow(wpisy, dzis = null) {
       const status = limitGr === null ? null : statusKwartalu(g.sumaGr, limitGr, przekroczenie);
       const statusZPlanem = limitGr === null ? null : statusKwartalu(g.sumaGr + g.zaplanowaneGr, limitGr, przekroczenie);
       const wolne = limitGr === null ? null : limitGr - g.sumaGr - g.zaplanowaneGr;
-      const wolneGr = wolne === null ? null : (wolne > 0n ? wolne : 0n);
+      // Po przekroczeniu nic nie zostaje do limitu, także gdy zwroty obniżyły sumę (jak „Zostało do limitu” w arkuszu).
+      const wolneGr = wolne === null ? null : (przekroczenie || wolne <= 0n ? 0n : wolne);
       let prognozaPrzekroczenia = null;
       if (limitGr !== null && !przekroczenie && g.zaplanowane) {
         const data = dzienOsiagnieciaProgu(przebiegKwartalu(wpisy, g.rok, g.q), limitGr, 'przekroczenie');
@@ -350,7 +361,7 @@ export function prognoza(wpisy, dzis) {
   const planPrzekroczenie = !fakt && dzienPlanu
     ? { data: dzienPlanu, termin: dodajDni(dzienPlanu, DNI_NA_WNIOSEK_CEIDG), prognoza: true } : null;
   const wolne = zapasGr - zaplanowaneGr;
-  const wolneGr = wolne > 0n ? wolne : 0n;
+  const wolneGr = fakt || wolne <= 0n ? 0n : wolne; // po przekroczeniu 0, także gdy zwroty obniżyły sumę
   const naKoniecZTempa = (tempo * BigInt(dniZostalo)) / D;
   const sumaNaKoniecGr = sumaGr + (naKoniecZTempa > zaplanowaneGr ? naKoniecZTempa : zaplanowaneGr);
   const przekr = progi.find((p) => p.prog === 'przekroczenie');
@@ -424,7 +435,7 @@ export function wartosciArkusza(posortowane) {
   return posortowane.map((w, i) => {
     if (sumy[i] === null) return { F: 'brak kursu', G: '', H: '', I: 'Wpisz kurs NBP w kolumnie E' };
     const { od, rok, G } = sumy[i];
-    const limitGr = PLACA_MINIMALNA[rok] === undefined ? null : limitDlaRoku(rok);
+    const limitGr = limitLubNull(rok); // ten sam warunek co historiaKwartalow() i prognoza()
     if (limitGr === null) return { F: pln[i], G, H: 'brak limitu', I: 'Wpisz płacę minimalną na ten rok w zakładce Limity' };
     const przekroczonyWczesniej = sumy.some((s, j) => s !== null && s.od === od && posortowane[j].data <= w.data && s.G > limitGr);
     return { F: pln[i], G, H: G > 0n ? Number(G) / Number(limitGr) : 0, I: przekroczonyWczesniej ? 'Limit przekroczony' : drabinka(G, limitGr) };
@@ -471,10 +482,16 @@ export function odczytajDate(wartosc, system1904 = false) {
   return poprawnaData(iso) ? iso : null;
 }
 
-/** Numer seryjny daty Excela (system 1900; 1904, gdy plik tak deklaruje). */
+/**
+ * Numer seryjny daty Excela (system 1900; 1904, gdy plik tak deklaruje) albo null.
+ * W systemie 1900 numery 1–60 to styczeń i luty 1900 r., liczone przez Excel z nieistniejącym 29.02.1900, więc
+ * nie dają tej samej daty co w Excelu. Taka liczba w kolumnie daty to zwykle liczba porządkowa albo ilość: null.
+ * Ponad 2958465 (31.12.9999) Excel nie ma dat: null zamiast wyjątku.
+ */
 export function dataZSeryjnej(n, system1904 = false) {
-  if (!Number.isFinite(n) || n < 1) return null;
+  if (!Number.isFinite(n) || n < 1 || (!system1904 && n < 61)) return null;
   const dni = Math.floor(n) + (system1904 ? 1462 : 0);
+  if (dni > 2958465) return null;
   return new Date(Date.UTC(1899, 11, 30) + dni * 86400000).toISOString().slice(0, 10);
 }
 
@@ -483,28 +500,42 @@ export function seryjnaZDaty(data) {
 }
 
 const norm = (t) => String(t ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+const jestLiczba = (v) => { try { tekstLiczby(v); return true; } catch { return false; } };
 
 /**
  * Wiersze z pliku (tablice wartości: tekst albo liczba) → wpisy.
- * Szuka wiersza nagłówka („Data” … „Kwota”) w pierwszych 30 wierszach; bez nagłówka przyjmuje układ A–E.
+ * Szuka wiersza nagłówka („Data” albo „Data sprzedaży” … „Kwota”) w pierwszych 30 wierszach; bez nagłówka przyjmuje
+ * układ A–E (kolumny J wtedy nie czyta). Gdy nagłówka nie ma, a pierwszy niepusty wiersz nie wygląda na sprzedaż (ani
+ * data w A, ani liczba w C), plik ma nieznany nagłówek: zwraca jeden błąd zamiast czytać kolumny po pozycji.
  * Kolumna „Zwrot dotyczy sprzedaży z dnia” (od wersji 0.4.4 kolumna J) jest nieobowiązkowa: pliki bez niej
- * (wcześniejsze eksporty, inne programy) wczytują się jak dotąd, a wpisy nie mają pola dotyczy.
- * Opcja system1904: numery seryjne dat w kolumnie „dotyczy” liczone od 1904 (XLSX, który tak deklaruje).
+ * (wcześniejsze eksporty, inne programy) wczytują się jak dotąd, a wpisy nie mają pola dotyczy. Wypełniona przy kwocie
+ * dodatniej to błąd wiersza (zwrot zapisany bez minusa). Kurs bez waluty albo przy PLN (inny niż 1) też.
+ * Opcja system1904: numery seryjne dat liczone od 1904 (XLSX, który tak deklaruje), w każdej kolumnie dat.
+ * Opcja scisleKolumny (CSV): niepuste pole za ostatnią kolumną nagłówka to błąd wiersza, bo zwykle oznacza
+ * przecinek dziesiętny bez cudzysłowu w pliku z separatorem „,”.
  * Zwraca { wpisy, bledy: [{ wiersz, powod }] }; numer wiersza jak w arkuszu (od 1).
  */
-export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false } = {}) {
+export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false, scisleKolumny = false } = {}) {
   let kol = { data: 0, opis: 1, kwota: 2, waluta: 3, kurs: 4, dotyczy: -1 };
   let start = 0;
+  let ostatniaKolumna = Infinity;
   for (let i = 0; i < Math.min(wiersze.length, 30); i += 1) {
     const h = (wiersze[i] ?? []).map(norm);
-    const iData = h.indexOf('data');
+    const iData = h.findIndex((x) => x === 'data' || x === 'data sprzedaży');
     const iKwota = h.findIndex((x) => x === 'kwota' || x === 'kwota sprzedaży');
     if (iData >= 0 && iKwota >= 0) {
       const znajdz = (...nazwy) => h.findIndex((x) => nazwy.includes(x));
       kol = { data: iData, opis: znajdz('opis'), kwota: iKwota, waluta: znajdz('waluta'), kurs: znajdz('kurs nbp', 'kurs'),
         dotyczy: h.findIndex((x) => (x ?? '').startsWith('zwrot dotyczy') || x === 'dotyczy') };
       start = i + 1;
+      ostatniaKolumna = h.reduce((m, x, j) => (x !== '' ? j : m), -1);
       break;
+    }
+  }
+  if (start === 0) {
+    const i = wiersze.findIndex((w) => (w ?? []).some((x) => String(x ?? '').trim() !== ''));
+    if (i >= 0 && !odczytajDate(wiersze[i][0] ?? '', system1904) && !jestLiczba(wiersze[i][2] ?? '')) {
+      return { wpisy: [], bledy: [{ wiersz: i + pierwszyNumer, powod: 'nie rozpoznano nagłówka: plik potrzebuje kolumn „Data” i „Kwota” (jak w arkuszu), a bez nagłówka dat w kolumnie A i kwot w kolumnie C' }] };
     }
   }
   const wpisy = [];
@@ -516,7 +547,11 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false 
     const surowaKwota = komorka(kol.kwota);
     if (String(surowaData).trim() === '' && String(surowaKwota).trim() === '') continue;
     const numer = i + pierwszyNumer;
-    const data = odczytajDate(surowaData);
+    if (scisleKolumny && w.some((x, k) => k > ostatniaKolumna && String(x ?? '').trim() !== '')) {
+      bledy.push({ wiersz: numer, powod: 'więcej pól niż kolumn w nagłówku: przy separatorze „,” liczbę z przecinkiem (kwotę albo kurs) wpisz w cudzysłowie, np. "49,90"' });
+      continue;
+    }
+    const data = odczytajDate(surowaData, system1904);
     if (!data) { bledy.push({ wiersz: numer, powod: 'niepoprawna data' }); continue; }
     let opis = String(komorka(kol.opis));
     if (/^'[=+\-@]/.test(opis)) opis = opis.slice(1); // ochrona przed formułami z naszego eksportu CSV
@@ -524,9 +559,22 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false 
     // Data, której dotyczy zwrot: nieczytelną przekazujemy dalej, żeby normalizujWpis zgłosił błąd wiersza.
     const surowaDotyczy = komorka(kol.dotyczy);
     const dotyczy = String(surowaDotyczy).trim() === '' ? '' : (odczytajDate(surowaDotyczy, system1904) ?? String(surowaDotyczy));
+    if (dotyczy && jestLiczba(surowaKwota) && !tekstLiczby(surowaKwota).startsWith('-')) {
+      bledy.push({ wiersz: numer, powod: 'kolumna „Zwrot dotyczy sprzedaży z dnia” (w arkuszu J) jest wypełniona, a kwota jest dodatnia: zwrot wpisz z minusem albo wyczyść tę kolumnę' });
+      continue;
+    }
+    const waluta = String(komorka(kol.waluta)).trim();
+    const surowyKurs = komorka(kol.kurs);
+    if (String(surowyKurs).trim() !== '') {
+      if (waluta === '') { bledy.push({ wiersz: numer, powod: 'podano kurs bez waluty: wpisz kod waluty, np. EUR' }); continue; }
+      if (waluta.toUpperCase() === 'PLN' && !(jestLiczba(surowyKurs) && /^1(\.0*)?$/.test(tekstLiczby(surowyKurs)))) {
+        bledy.push({ wiersz: numer, powod: 'kurs przy kwocie w PLN: usuń kurs albo wpisz walutę sprzedaży' });
+        continue;
+      }
+    }
     try {
       wpisy.push(normalizujWpis({
-        id: `i${wpisy.length + 1}`, data, opis, kwota: surowaKwota, waluta: String(komorka(kol.waluta)) || 'PLN', kurs: komorka(kol.kurs),
+        id: `i${wpisy.length + 1}`, data, opis, kwota: surowaKwota, waluta: waluta || 'PLN', kurs: surowyKurs,
         dotyczy,
       }));
     } catch (e) {

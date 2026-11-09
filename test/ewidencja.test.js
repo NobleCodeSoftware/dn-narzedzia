@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BladDanych } from '../public/js/logic.js';
+import { BladDanych, PLACA_MINIMALNA } from '../public/js/logic.js';
 import { opisProgu, klasaProgu, procentTekst } from '../public/js/wspolne.js';
 import {
   normalizujWpis, tekstLiczby, kwotaPlnGr, historiaKwartalow, prognoza, przebiegKwartalu, wartosciArkusza,
   wierszeEwidencji, wierszeNaWpisy, odczytajDate, granicaKwartalu, kolejnyNumer, posortuj, kwotaProgu,
-  niejednoznacznaKwota, polaczWpisy, ostrzezeniaZwrotow, opisOstrzezeniaZwrotu, statusKwartalu,
+  niejednoznacznaKwota, polaczWpisy, ostrzezeniaZwrotow, opisOstrzezeniaZwrotu, statusKwartalu, dataZSeryjnej,
 } from '../public/js/ewidencja-logika.js';
 import { eksportujCsv, importujCsv, parsujCsv } from '../public/js/csv.js';
 import { eksportujXlsx, importujXlsx, komorkiArkusza } from '../public/js/xlsx.js';
@@ -35,7 +35,11 @@ test('wpis: walidacja i kwota w PLN z zaokrągleniem jak ROUND(C*E;2)', () => {
   assert.equal(kwotaPlnGr(w('2026-10-01', '49,90')), 4990n);
   assert.equal(kwotaPlnGr(w('2026-10-01', '10', 'EUR', '4,3641')), 4364n); // 43,641 → 43,64
   assert.equal(kwotaPlnGr(w('2026-10-01', '0,5', 'EUR', '4,3650')), 218n); // 2,1825 → 2,18
-  assert.equal(kwotaPlnGr(w('2026-10-01', '0,7', 'EUR', '4,3650')), 306n); // 3,0555 → 3,06 (połówka w górę)
+  assert.equal(kwotaPlnGr(w('2026-10-01', '0,7', 'EUR', '4,3650')), 306n); // 3,0555 zł = 305,55 gr → 306 gr (powyżej połowy)
+  assert.equal(kwotaPlnGr(w('2026-10-01', '10', 'EUR', '4,3645')), 4365n); // 4364,5 gr: połówka od zera, jak ROUND
+  assert.equal(kwotaPlnGr(w('2026-10-01', '-10', 'EUR', '4,3645')), -4365n);
+  assert.equal(kwotaPlnGr(w('2026-10-01', '1000,005')), 100001n); // PLN z trzema miejscami: jak ROUND(C;2)
+  assert.equal(kwotaPlnGr(w('2026-10-01', '-1000,005')), -100001n);
   assert.equal(kwotaPlnGr(w('2026-10-01', '-25', 'USD', '3,9')), -9750n); // zwrot
   assert.equal(kwotaPlnGr(w('2026-10-01', '10', 'EUR')), null);
   assert.throws(() => normalizujWpis({ data: '2026-13-01', kwota: '1' }), /datę/);
@@ -688,8 +692,13 @@ test('import: pliki bez kolumny J (wcześniejsze eksporty) wczytują się jak do
   assert.match(bledne.bledy[0].powod, /dotyczy zwrot/);
   assert.match(bledne.bledy[1].powod, /nie może być późniejsza/);
   assert.equal(bledne.wpisy[0].dotyczy, '2026-12-20', 'polski zapis daty też działa');
-  // Przy sprzedaży (kwota dodatnia) pole jest pomijane, jak w formularzu.
-  assert.equal('dotyczy' in importujCsv(`${naglowek}2027-01-15;d;300;PLN;;;;;;2026-12-20\r\n`).wpisy[0], false);
+  // Kwota dodatnia z wypełnioną kolumną J to zwrot zapisany bez minusa: błąd wiersza, a nie sprzedaż +300 zł.
+  for (const j of ['2026-12-20', 'wczoraj']) {
+    const dodatnia = importujCsv(`${naglowek}2027-01-15;d;300;PLN;;;;;;${j}\r\n`);
+    assert.deepEqual(dodatnia.wpisy, [], j);
+    assert.equal(dodatnia.bledy[0].wiersz, 2);
+    assert.match(dodatnia.bledy[0].powod, /minus/);
+  }
 });
 
 // ---------------------------------------------------------------- formuły wzoru XLSX (H i I jak na stronie)
@@ -735,4 +744,169 @@ test('XLSX: ponad 1000 wpisów rozszerza także zakres H w warunku przekroczenia
   assert.match(s1, /sqref="H5:I1007"/);
   assert.match(s1, /<c r="J1007" s="5"\/>/);
   assert.ok(formula(s2, 'I5').includes("COUNTIFS('Sprzedaż'!$H$5:$H$1007,\">1\""));
+});
+
+// ---------------------------------------------------------------- strona, eksport i wzór liczą tak samo
+
+test('po przekroczeniu i zwrocie nic nie zostaje do limitu (historia kwartałów i prognoza, jak „Zostało do limitu”)', () => {
+  const wpisy = [w('2026-10-05', '6000'), w('2026-10-20', '5000'), w('2026-11-03', '-500')];
+  for (const dzis of [null, '2026-11-05']) {
+    const kw = historiaKwartalow(wpisy, dzis)[0];
+    assert.equal(kw.przekroczenie.data, '2026-10-20');
+    assert.equal(kw.sumaGr, 1050000n, 'suma po zwrocie jest poniżej limitu');
+    assert.equal(kw.wolneGr, 0n, `dzis = ${dzis}`);
+  }
+  const p = prognoza(wpisy, '2026-11-05');
+  assert.equal(p.zapasGr, 31350n, 'zapas pokazuje różnicę do limitu');
+  assert.equal(p.wolneGr, 0n);
+  assert.equal(p.budzetDziennyGr, 0n);
+});
+
+test('kolumny F–I: rok sprzed 2026 bez limitu, wejście nieposortowane, przełom roku, sprzedaż i zwrot jednego dnia', () => {
+  assert.deepEqual(wartosciArkusza([w('2025-12-01', '100')])[0],
+    { F: 10000n, G: 10000n, H: 'brak limitu', I: 'Wpisz płacę minimalną na ten rok w zakładce Limity' });
+  const [a, b, c] = [w('2026-10-20', '5000'), w('2026-10-05', '6000'), w('2026-11-03', '-500')];
+  const v = wartosciArkusza([a, b, c]);
+  assert.deepEqual(v.map((x) => x.I), ['Limit przekroczony', 'W limicie', 'Limit przekroczony']);
+  const posortowane = posortuj([a, b, c]);
+  const vp = wartosciArkusza(posortowane);
+  [a, b, c].forEach((x, i) => assert.deepEqual(v[i], vp[posortowane.indexOf(x)]));
+  const rok = wartosciArkusza([w('2026-12-31', '11000'), w('2027-01-02', '11000')]);
+  assert.deepEqual(rok.map((x) => x.I), ['Limit przekroczony', 'Co najmniej 95% limitu']);
+  assert.equal(rok[1].H, 1100000 / 1113750);
+  const dzien = [w('2026-10-01', '5000'), w('2026-10-15', '6000'), w('2026-10-15', '-500')];
+  const vd = wartosciArkusza(dzien);
+  assert.deepEqual(vd.slice(1).map((x) => [x.G, x.I]), [[1050000n, 'Co najmniej 95% limitu'], [1050000n, 'Co najmniej 95% limitu']]);
+  assert.equal(historiaKwartalow(dzien)[0].przekroczenie, null);
+});
+
+test('suma równa limitowi z ułamków i próg 70% co do grosza; wzór zaokrągla sumy do grosza', async () => {
+  const v = wartosciArkusza([w('2026-10-01', '10813,20'), w('2026-10-02', '0,10'), w('2026-10-03', '0,20')]);
+  assert.equal(v[2].G, 1081350n);
+  assert.equal(v[2].I, 'Limit wykorzystany (100%)');
+  assert.equal(wartosciArkusza([w('2026-10-01', '7569,45')])[0].I, 'Co najmniej 70% limitu');
+  assert.equal(wartosciArkusza([w('2026-10-01', '7569,44')])[0].I, 'W limicie');
+  assert.equal(wartosciArkusza([w('2027-10-01', '7796,25')])[0].I, 'Co najmniej 70% limitu');
+  const pliki = await czytajZip(WZOR);
+  const tekst = (n) => new TextDecoder().decode(pliki.get(n));
+  assert.match(formula(tekst('xl/worksheets/sheet1.xml'), 'G5'), /^IF\(.*ROUND\(SUMIFS\(.*\),2\)\)\)$/);
+  assert.match(formula(tekst('xl/worksheets/sheet2.xml'), 'E5'), /^ROUND\(SUMIFS\(.*\),2\)$/);
+});
+
+test('wzór: Podsumowanie ma kwartały wszystkich lat z zakładki Limity, a płaca minimalna zgadza się ze stroną', async () => {
+  const pliki = await czytajZip(WZOR);
+  const tekst = (n) => new TextDecoder().decode(pliki.get(n));
+  const podsumowanie = tekst('xl/worksheets/sheet2.xml');
+  const lata = [...podsumowanie.matchAll(/<c r="A(\d+)"[^>]*><v>(\d{4})<\/v><\/c>/g)].map((m) => Number(m[2]));
+  assert.deepEqual([...new Set(lata)], [2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035]);
+  assert.equal(lata.length, 40);
+  const limity = tekst('xl/worksheets/sheet3.xml');
+  const komorka = (adres) => /<v>([^<]*)<\/v>/.exec(new RegExp(`<c r="${adres}"[^>]*>(.*?)</c>`).exec(limity)?.[1] ?? '')?.[1] ?? '';
+  for (let r = 5; r <= 14; r += 1) {
+    const rok = Number(komorka(`A${r}`));
+    assert.equal(komorka(`B${r}`), PLACA_MINIMALNA[rok] ?? '', `rok ${rok}`);
+  }
+});
+
+// ---------------------------------------------------------------- import: pliki edytowane ręcznie i z innych programów
+
+test('CSV: niezamknięty cudzysłów to błąd pliku, a nie cicha utrata dalszych wierszy', () => {
+  assert.throws(() => importujCsv('Data;Kwota;Opis\n2026-10-01;10;"Kubek\n2026-10-02;20;Talerz\n'),
+    (e) => e instanceof BladDanych && /Niezamknięty cudzysłów w wierszu 2/.test(e.message));
+  assert.throws(() => importujCsv('Data;Opis;Kwota\r\n2026-10-01;"30 cm;49,90\r\n2026-10-02;b;10\r\n'), BladDanych);
+  assert.deepEqual(parsujCsv('a;"b ""c"""\r\n'), [['a', 'b "c"']], 'poprawne cudzysłowy bez zmian');
+});
+
+test('CSV: pole za ostatnią kolumną nagłówka (przecinek dziesiętny bez cudzysłowu) to błąd wiersza', () => {
+  const kurs = importujCsv('Data,Opis,Kwota,Waluta,Kurs NBP\n2026-10-01,Etsy,10,EUR,4,3641\n2026-10-02,Etsy,10,EUR,"4,3641"\n');
+  assert.deepEqual(kurs.bledy.map((b) => b.wiersz), [2]);
+  assert.match(kurs.bledy[0].powod, /cudzysłowie/);
+  assert.deepEqual(kurs.wpisy.map((x) => x.kurs), ['4.3641']);
+  assert.deepEqual(importujCsv('Data,Kwota\n2026-10-01,1,234.50\n').wpisy, []);
+  // Nasz eksport z kolumną J (10 kolumn) przechodzi bez błędów.
+  assert.deepEqual(importujCsv(eksportujCsv(PROBKA())).bledy, []);
+});
+
+test('import: nagłówek „Data sprzedaży” rozpoznany, nieznany nagłówek odrzucony zamiast czytania kolumn po pozycji', () => {
+  const sprzedaz = importujCsv('Data sprzedaży;Kwota sprzedaży;Narastająco\n2026-10-01;100,00;100,00\n2026-10-02;50,00;150,00\n');
+  assert.deepEqual(sprzedaz.bledy, []);
+  assert.deepEqual(sprzedaz.wpisy.map((x) => x.kwota), ['100.00', '50.00']);
+  const obcy = importujCsv('Date;Description;Amount\r\n2026-10-01;Mug;100\r\n');
+  assert.deepEqual(obcy.wpisy, []);
+  assert.equal(obcy.bledy.length, 1);
+  assert.match(obcy.bledy[0].powod, /nie rozpoznano nagłówka/);
+  // Bez nagłówka, z datą w A i kwotą w C: układ A–E jak dotąd.
+  assert.deepEqual(importujCsv('2026-10-01;Kubek;49,90\r\n').wpisy.map((x) => x.kwota), ['49.90']);
+});
+
+test('import: kurs bez waluty albo przy PLN to błąd wiersza (sprzedaż w walucie nie liczy się po cichu jako PLN)', () => {
+  const { wpisy, bledy } = wierszeNaWpisy([
+    ['Data', 'Kwota', 'Waluta', 'Kurs NBP'], ['2026-10-01', '100', '', '4,25'], ['2026-10-02', '100', 'PLN', '4,25'],
+    ['2026-10-03', '100', 'PLN', ''], ['2026-10-04', '100', 'PLN', '1'], ['2026-10-05', '100', 'EUR', '4,25'],
+  ]);
+  assert.deepEqual(bledy.map((b) => b.wiersz), [2, 3]);
+  assert.match(bledy[0].powod, /bez waluty/);
+  assert.match(bledy[1].powod, /PLN/);
+  assert.deepEqual(wpisy.map((x) => [x.waluta, x.kurs]), [['PLN', ''], ['PLN', ''], ['EUR', '4.25']]);
+});
+
+test('liczby z pliku: separator tysięcy tylko co trzy cyfry', () => {
+  for (const t of ['1,234,5', '1.23,45', '1.234.5', '12 34,5', '4,36,41', '1.234,5,6']) {
+    assert.throws(() => tekstLiczby(t), BladDanych, t);
+  }
+  assert.equal(tekstLiczby('1.234.567,89'), '1234567.89');
+  assert.equal(tekstLiczby('1,234,567.89'), '1234567.89');
+  assert.equal(tekstLiczby('1 234,50'), '1234.50');
+  assert.equal(tekstLiczby('1 234 567'), '1234567');
+  assert.equal(tekstLiczby('1 234,50 zł'), '1234.50');
+  assert.equal(tekstLiczby('1,234,567'), '1234567');
+  const { wpisy, bledy } = wierszeNaWpisy([['Data', 'Kwota'], ['2026-10-01', '1,234,5'], ['2026-10-02', '10']]);
+  assert.equal(wpisy.length, 1);
+  assert.deepEqual(bledy, [{ wiersz: 2, powod: 'Wpisz kwotę samymi cyframi, np. 49,90.' }]);
+});
+
+test('CSV w Windows-1250 (polski Excel): polskie litery i „zł” bez znaków zastępczych', () => {
+  const tekst = 'Data;Opis;Kwota\r\n2026-10-01;Zażółć;49,90 zł\r\n';
+  const mapa = { 'ż': 0xbf, 'ó': 0xf3, 'ł': 0xb3, 'ć': 0xe6 };
+  const bajty = Uint8Array.from([...tekst].map((z) => mapa[z] ?? z.charCodeAt(0)));
+  const { wpisy, bledy } = importujCsv(bajty);
+  assert.deepEqual(bledy, []);
+  assert.deepEqual(wpisy.map((x) => [x.opis, x.kwota]), [['Zażółć', '49.90']]);
+  // UTF-8 z BOM (nasz eksport) jako bajty: bez zmian.
+  const eksport = eksportujCsv(PROBKA());
+  assert.deepEqual(importujCsv(new TextEncoder().encode(eksport)), importujCsv(eksport));
+});
+
+const xlsxZWierszami = (wiersze, workbookPr = '') => {
+  const wb = `<workbook xmlns:r="r">${workbookPr}<sheets><sheet name="Sprzedaż" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const rels = '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>';
+  const kom = (v, adres) => (typeof v === 'number' ? `<c r="${adres}"><v>${v}</v></c>` : `<c r="${adres}" t="inlineStr"><is><t>${v}</t></is></c>`);
+  const arkusz = `<worksheet><sheetData>${wiersze.map((w, i) => `<row r="${i + 1}">${w.map((v, k) => (v === '' ? '' : kom(v, `${'ABCDEFGHIJ'[k]}${i + 1}`))).join('')}</row>`).join('')}</sheetData></worksheet>`;
+  return zapiszZip(new Map([['xl/workbook.xml', wb], ['xl/_rels/workbook.xml.rels', rels], ['xl/worksheets/sheet1.xml', arkusz]]));
+};
+
+test('XLSX: system dat 1904 w każdej kolumnie dat, nie tylko w A', async () => {
+  const pr = '<workbookPr date1904="1"/>';
+  const b = await importujXlsx(await xlsxZWierszami([['Lp', 'Data', 'Kwota'], [1, 44854, 100]], pr));
+  assert.deepEqual(b.bledy, []);
+  assert.equal(b.wpisy[0].data, '2026-10-21');
+  const a = await importujXlsx(await xlsxZWierszami([['Data', '', 'Kwota'], [44854, '', 100]], pr));
+  assert.equal(a.wpisy[0].data, '2026-10-21');
+  const bez = await importujXlsx(await xlsxZWierszami([['Data', '', 'Kwota'], [46316, '', 100]]));
+  assert.equal(bez.wpisy[0].data, '2026-10-21');
+});
+
+test('XLSX: duża liczba albo liczba porządkowa w kolumnie daty to błąd wiersza, a nie przerwany import', async () => {
+  assert.equal(dataZSeryjnej(3123456789), null);
+  assert.equal(dataZSeryjnej(2958465), '9999-12-31');
+  assert.equal(odczytajDate(5), null);
+  assert.equal(odczytajDate(60), null);
+  assert.equal(odczytajDate(61), '1900-03-01');
+  const x = await importujXlsx(await xlsxZWierszami([['Data', '', 'Kwota'], [3123456789, '', 100], [46316, '', 50], [5, '', 7]]));
+  assert.deepEqual(x.bledy, [{ wiersz: 2, powod: 'niepoprawna data' }, { wiersz: 4, powod: 'niepoprawna data' }]);
+  assert.deepEqual(x.wpisy.map((w) => w.kwota), ['50']);
+  const zwrot = await importujXlsx(await xlsxZWierszami([
+    ['Data', '', 'Kwota', '', '', '', '', '', '', 'Zwrot dotyczy sprzedaży z dnia'], [46316, '', -50, '', '', '', '', '', '', 3123456789]]));
+  assert.equal(zwrot.wpisy.length, 0);
+  assert.equal(zwrot.bledy[0].wiersz, 2);
 });

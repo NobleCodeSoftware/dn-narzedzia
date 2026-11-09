@@ -7,7 +7,7 @@ Bez kont i bez serwera aplikacji: wszystko działa w przeglądarce.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.4.4. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
+Wersja 0.4.5. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
@@ -15,7 +15,7 @@ Wersja 0.4.4. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 |---|---|
 | `/` | ewidencja sprzedaży: dodawanie, edycja i usuwanie wpisów; stan bieżącego kwartału z progami 70/85/95/100% (kwota progu, dzień osiągnięcia albo prognozy); prognoza przekroczenia (data, zapas, kwota na koniec kwartału, średnio dziennie do końca kwartału); historia kwartałów; „Co się stanie po przekroczeniu limitu” (data przekroczenia i termin 7 dni na wniosek do CEIDG z dopiskiem, gdy termin wypada w dzień wolny, linki do biznes.gov.pl i ZUS, bez liczenia podatku); zwroty z datą dokumentu korekty i ostrzeżeniem, gdy wynik zależy od wyboru kwartału; kurs średni NBP z ostatniego dnia roboczego przed sprzedażą (automatycznie, z obsługą świąt, możliwy kurs ręczny, „Uzupełnij kursy NBP” po imporcie); import i eksport XLSX/CSV w układzie arkusza; wydruk/PDF uproszczonej ewidencji za rok; pamięć przeglądarki z dwoma przełącznikami (wpisy ewidencji; Twoje dane i dane klientów do faktur) i „Wyczyść dane”; przykładowe dane. Niżej: „Szybkie sprawdzenie bez ewidencji” (licznik kwota ÷ limit), arkusz do pobrania, źródła kwot i krótka sekcja o KSeF od 2027 |
 | `/faktura/` | faktura bez VAT (zwolnienie) dla sprzedawcy zwolnionego z VAT: klient prywatny albo firma z Polski (NIP z cyfrą kontrolną), do 10 pozycji (ilość × cena, zaokrąglenie do grosza), kwota słownie, kolejny numer N/RRRR, podstawa zwolnienia (art. 113 ust. 1, ust. 9 albo własna), termin wystawienia i termin prośby klienta (także po późniejszej zapłacie albo zaliczce), reguła KSeF z blokadą, wydruk/PDF przez okno drukowania, lista wystawionych faktur, zapamiętani klienci i dane sprzedawcy (tylko po włączeniu), opcjonalne dopisanie sprzedaży do ewidencji bez dublowania |
-| `/pobierz/arkusz-limit-dn.xlsx` | darmowy arkusz (Excel, LibreOffice, Arkusze Google; bez makr i połączeń z siecią): data, opis, kwota, waluta, kurs NBP, kwota w PLN, suma kwartału narastająco, % limitu i ostrzeżenia (formatowanie warunkowe 70/85/95/100%); zakładki „Podsumowanie” (kwartały 2026–2028), „Limity” (płaca minimalna na rok, do uzupełnienia na 2028+), „Instrukcja” |
+| `/pobierz/arkusz-limit-dn.xlsx` | darmowy arkusz (Excel, LibreOffice, Arkusze Google; bez makr i połączeń z siecią): data, opis, kwota, waluta, kurs NBP, kwota w PLN, suma kwartału narastająco, % limitu i ostrzeżenia (formatowanie warunkowe 70/85/95/100%); zakładki „Podsumowanie” (kwartały 2026–2035), „Limity” (płaca minimalna na rok, do uzupełnienia na 2028+), „Instrukcja” |
 | `/regulamin/`, `/prywatnosc/`, `/o-nas/` | regulamin, polityka prywatności oraz informacje o narzędziach, usługodawcy i udziale AI |
 | `_redirects` | stałe przekierowania 301 dawnych podstron (`/limit-…`, `/ksef-2027-…`, `/ewidencja-sprzedazy-…`, `/ewidencja/`) na `/` |
 
@@ -87,11 +87,24 @@ Wydruk ma te kolumny oraz opis, narastająco w kwartale i walutę z kursem.
 
 Import XLSX/CSV przyjmuje kwoty w zapisie polskim i angielskim („1 234,50”, „1.234,50”, „1,234.50”). Kwotę z jednym
 separatorem i dokładnie trzema cyframi po nim („1,234”, „1.234”) odrzuca z błędem wiersza, bo może oznaczać 1234 zł
-albo 1,234 zł; formularz pokazuje wtedy komunikat.
+albo 1,234 zł; formularz pokazuje wtedy komunikat. Separator tysięcy (kropka, przecinek albo spacja) musi dzielić
+liczbę co trzy cyfry: „1,234,5”, „1.23,45” i „12 34,5” to błąd wiersza, a nie 12345 albo 123,45.
 
-Kolumna J („Zwrot dotyczy sprzedaży z dnia”) jest nieobowiązkowa i rozpoznawana po nagłówku. Pliki bez niej (eksporty
-sprzed wersji 0.4.4, arkusze z innych programów) wczytują się jak dotąd. Data w kolumnie J liczy się tylko przy zwrocie;
-błędna albo późniejsza niż data dokumentu korekty daje błąd wiersza.
+Kolumny są rozpoznawane po nagłówku („Data” albo „Data sprzedaży”, „Kwota” albo „Kwota sprzedaży”, „Opis”, „Waluta”,
+„Kurs NBP”, „Zwrot dotyczy sprzedaży z dnia”). **CSV bez nagłówka** jest czytany w układzie A–E (data, opis, kwota,
+waluta, kurs), a kolumna J jest wtedy pomijana: datę sprzedaży, której dotyczy zwrot, import czyta tylko z pliku
+z nagłówkiem. Gdy nagłówka nie ma, a pierwszy wiersz nie zaczyna się datą i nie ma kwoty w kolumnie C (np. nagłówek
+po angielsku), import odmawia z jednym komunikatem zamiast czytać kolumny po pozycji.
+
+Kolumna J („Zwrot dotyczy sprzedaży z dnia”) jest nieobowiązkowa. Pliki bez niej (eksporty sprzed wersji 0.4.4,
+arkusze z innych programów) wczytują się jak dotąd. Data w kolumnie J liczy się tylko przy zwrocie; błędna albo późniejsza
+niż data dokumentu korekty daje błąd wiersza, a wypełniona przy kwocie dodatniej też (zwrot zapisany bez minusa).
+
+Inne błędy wiersza zamiast cichej zmiany danych: kurs bez waluty, kurs przy kwocie w PLN (inny niż 1), w CSV
+z nagłówkiem pole za ostatnią kolumną nagłówka (zwykle przecinek dziesiętny bez cudzysłowu przy separatorze „,”),
+w XLSX liczba w kolumnie daty, która nie jest datą Excela (np. 5 albo 3123456789). Niezamknięty cudzysłów w CSV
+zatrzymuje cały import z numerem wiersza. CSV zapisany w Windows-1250 (polski Excel) jest rozpoznawany, gdy plik nie
+jest poprawnym UTF-8. W XLSX z systemem dat 1904 każda kolumna dat liczy się według tego systemu.
 
 ### Eksport XLSX
 
@@ -101,16 +114,21 @@ zostają), pozostałe zakładki zostają bez zmian. Przy ponad 1000 wpisach eksp
 Wzór ma ustawione pełne przeliczenie przy otwarciu (`fullCalcOnLoad`). Czy program arkuszowy pokaże wynik formuł, czy
 zapisane wartości, zależy od programu i jego ustawień (w LibreOffice Calc: przeliczanie przy wczytywaniu plików Excela).
 Wynik jest ten sam: zapisane wartości F–I pochodzą ze strony, a formuły liczą tak jak strona:
+- G (`Suma kwartału`) i „Przychód” w „Podsumowaniu” są zaokrąglone do grosza (`ROUND(SUMIFS(…), 2)`), więc suma
+  ułamkowych kwot równa limitowi daje dokładnie 100%, jak na stronie, niezależnie od arytmetyki programu;
 - H (`% limitu`) = `MAX(0, G / limit)`, więc kwartał z samymi zwrotami ma 0%, a nie ujemny procent;
 - I (`Ostrzeżenie`) ma „Limit przekroczony”, gdy w tym kwartale do daty wiersza któryś wiersz miał H > 1
   (`COUNTIFS` po H i datach), więc późniejszy zwrot nie cofa przekroczenia; kolor wiersza też zostaje czerwony;
 - zakładka „Podsumowanie”: procent nie spada poniżej 0, a kwartał z przekroczeniem ma „Limit przekroczony” i 0 zł
-  w kolumnie „Zostało do limitu”, także gdy zwroty obniżyły sumę.
+  w kolumnie „Zostało do limitu”, także gdy zwroty obniżyły sumę (strona też pokazuje wtedy, że nic nie zostało).
+  Podsumowanie obejmuje lata 2026–2035, te same co zakładka „Limity”.
 
 Sprawdzone w LibreOffice Calc 24.2 (headless, wymuszone przeliczenie przy wczytaniu): eksport 17 wpisów (przekroczenie
 i zwrot w tym samym kwartale, zwrot do równego limitu, kwartał z samymi zwrotami, waluta z kursem i bez kursu,
 granica 100% i +1 grosz, rok bez płacy minimalnej) daje w F–I te same wartości co strona, także po usunięciu zapisanych
-wartości z pliku. W Excelu i Arkuszach Google tego nie sprawdzano; formuły używają tylko funkcji wymienionych
+wartości z pliku. Po zaokrągleniu sum do grosza (wersja 0.4.5) sprawdzone tak samo na 10 wpisach: suma równa limitowi
+z ułamków (10 813,20 + 0,10 + 0,20), przekroczenie i zwrot, próg 70% co do grosza, połówka grosza w walucie, rok bez
+płacy minimalnej (2029); F–I i „Podsumowanie” zgodne ze stroną. W Excelu i Arkuszach Google tego nie sprawdzano; formuły używają tylko funkcji wymienionych
 w „Arkusz XLSX: jak odtworzyć”.
 
 ### Faktura bez VAT (zwolnienie)
@@ -242,9 +260,9 @@ node --test            # Node 20+; bez zależności
 
 - `test/logic.test.js`: limit, progi, kwartały, strefa czasowa, kwoty.
 - `test/wspolne.test.js`: komunikaty progów, zdanie z kwotami, odczyt wpisu i tekst ogłoszenia dla czytnika ekranu, termin CEIDG w dzień wolny (dopisek z najbliższym dniem roboczym).
-- `test/pamiec.test.js`: dwa przełączniki pamięci, domyślnie faktury bez PESEL i danych klientów (rekord skrócony), numeracja i limit KSeF na rekordach skróconych, wyłączenie drugiego przełącznika usuwa dane osobowe także z faktur, usuwanie kluczy po wyłączeniu (zostaje tylko ustawienie), jednorazowy wybór po przejściu z wcześniejszej wersji, brak zapisu wpisów i faktur po wyłączeniu pamięci w innej karcie, ustawienia wcześniejszych wersji nie są zgodą, „Wyczyść dane” usuwa też kopię roboczą pierwszej wersji strony.
+- `test/pamiec.test.js`: dwa przełączniki pamięci, domyślnie faktury bez PESEL i danych klientów (rekord skrócony), numeracja i limit KSeF na rekordach skróconych, wyłączenie drugiego przełącznika usuwa dane osobowe także z faktur, usuwanie kluczy po wyłączeniu (zostaje tylko ustawienie), jednorazowy wybór po przejściu z wcześniejszej wersji (okno wyłączenia pamięci mówi o danych do faktur tylko wtedy, gdy rzeczywiście zostaną), brak zapisu wpisów i faktur po wyłączeniu pamięci w innej karcie, ustawienia wcześniejszych wersji nie są zgodą, „Wyczyść dane” usuwa też kopię roboczą pierwszej wersji strony.
 - `test/kalendarz-nbp.test.js`: Wielkanoc, święta 2026–2027, Wigilia wolna od 2025, dzień kursu przy weekendach i świętach, wybór kursu i zapytania NBP (bez sieci), kursy dla wielu wpisów naraz.
-- `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, zwroty (przekroczenie się nie cofa, ostrzeżenia, kwartał z samymi zwrotami), łączenie wpisów z dwóch kart, import, CSV i XLSX (round-trip, kolumna J z datą zwrotu i pliki bez niej, ponad 1000 wierszy, pliki z innych programów), formuły H i I wzoru XLSX (procent nie mniejszy niż 0, przekroczenie się nie cofa), ZIP (w tym ochrona przed „bombą ZIP”).
+- `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, zwroty (przekroczenie się nie cofa, ostrzeżenia, kwartał z samymi zwrotami), łączenie wpisów z dwóch kart, import, CSV i XLSX (round-trip, kolumna J z datą zwrotu i pliki bez niej, ponad 1000 wierszy, pliki z innych programów), formuły H i I wzoru XLSX (procent nie mniejszy niż 0, przekroczenie się nie cofa), sumy wzoru zaokrąglone do grosza, „Podsumowanie” 2026–2035 i płaca minimalna wzoru zgodna ze stroną, „zostało do limitu” 0 po przekroczeniu i zwrocie, import plików edytowanych ręcznie (niezamknięty cudzysłów, pola za nagłówkiem, nieznany nagłówek, grupy tysięcy, kurs bez waluty, kwota dodatnia z kolumną J, Windows-1250, system dat 1904, liczby w kolumnie daty), ZIP (w tym ochrona przed „bombą ZIP”).
 - `test/faktura.test.js`: numeracja, blokada faktur dla firm od 2027 r., limit 10 000 zł w 2026 r. (równo, +1 grosz, faktury z innych miejsc, utrata prawa w kolejnych miesiącach, osoba prywatna poza limitem), data wystawienia równa dziś, sumy brutto i zaokrąglenia, kwota słownie, NIP i PESEL, elementy faktury, terminy (także z datą zapłaty i zaliczki), faktury z KSeF w limicie 10 000 zł, usuwanie faktury po identyfikatorze, wydruk bez „null”, ewidencja bez dublowania, zachowanie bez `localStorage`, teksty okien (najwyżej 2 zdania w akapicie).
 - `test/zmiana-roku.test.js`: przejście z 2026 na 2027 przy symulowanym zegarze (31.12.2026, 1.01.2027, ostatnie dni kwartałów, 1.04.2027, 31.12.2027): data w Warszawie, limit kwartału i prognoza według bieżącej daty, historia i wydruk na przełomie roku, blokada faktur dla firm od 1.01.2027, numeracja od 1/2027, terminy faktury, dzień kursu NBP i zapytania przez granicę roku, ponowne przeliczenie po powrocie na kartę otwartą przed północą.
 - `test/strony.test.js` (metadane): tytuły, opisy, `canonical`, Open Graph, JSON-LD (tylko `/` i `/faktura/`, poprawny JSON, bez `aggregateRating` i `review`), mapa strony (`sitemap.xml`: adresy kanoniczne, aktualne `lastmod`) i `robots.txt`, strona `404.html` (noindex, bez `canonical` i JSON-LD).

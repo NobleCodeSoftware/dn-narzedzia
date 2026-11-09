@@ -38,7 +38,7 @@ PLACA = [
     (2027, 4950, "Dz.U. 2026 poz. 1213 (rozporządzenie Rady Ministrów z 14.09.2026)"),
 ]
 LATA_DO_UZUPELNIENIA = range(2028, 2036)
-LATA_PODSUMOWANIA = (2026, 2027, 2028)
+LATA_PODSUMOWANIA = range(2026, 2036)  # te same lata co w zakładce „Limity”
 
 PIERWSZY, OSTATNI = 5, 1004  # wiersze na sprzedaż w zakładce „Sprzedaż”
 LIMITY_ZAKRES = "Limity!$A$5:$C$14"
@@ -156,8 +156,10 @@ def zakladka_sprzedaz(wb: Workbook) -> None:
         ws[f"F{r}"] = (f'=IF(C{r}="","",IF(OR(D{r}="",D{r}="PLN"),ROUND(C{r},2),'
                        f'IF(E{r}="","brak kursu",ROUND(C{r}*E{r},2))))')
         ws[f"G{r}"] = (f'=IF(OR(A{r}="",NOT(ISNUMBER(F{r}))),"",IF(NOT(ISNUMBER(A{r})),"sprawdź datę",'
-                       f'SUMIFS({zakres_f},{zakres_a},">="&DATE(YEAR(A{r}),INT((MONTH(A{r})-1)/3)*3+1,1),'
-                       f'{zakres_a},"<="&A{r})))')
+                       f'ROUND(SUMIFS({zakres_f},{zakres_a},">="&DATE(YEAR(A{r}),INT((MONTH(A{r})-1)/3)*3+1,1),'
+                       f'{zakres_a},"<="&A{r}),2)))')
+        # ROUND w G: suma kwot w groszach bez błędu zaokrągleń liczb zmiennoprzecinkowych (np. 10 813,20 + 0,10 + 0,20
+        # daje dokładnie limit, więc H = 100%, a nie 100,0000000000002% i „Limit przekroczony”), tak jak na stronie.
         # Procent limitu nie spada poniżej 0 (kwartał z samymi zwrotami).
         ws[f"H{r}"] = (f'=IF(NOT(ISNUMBER(G{r})),"",'
                        f'IFERROR(MAX(0,G{r}/VLOOKUP(YEAR(A{r}),{LIMITY_ZAKRES},3,FALSE)),"brak limitu"))')
@@ -221,8 +223,8 @@ def zakladka_podsumowanie(wb: Workbook) -> None:
             ws[f"B{r}"] = ["I", "II", "III", "IV"][q - 1]
             ws[f"C{r}"] = f"=DATE(A{r},{(q - 1) * 3 + 1},1)"
             ws[f"D{r}"] = f"=EOMONTH(C{r},2)"
-            ws[f"E{r}"] = (f'=SUMIFS({s}$F${PIERWSZY}:$F${OSTATNI},{s}$A${PIERWSZY}:$A${OSTATNI},">="&C{r},'
-                           f'{s}$A${PIERWSZY}:$A${OSTATNI},"<="&D{r})')
+            ws[f"E{r}"] = (f'=ROUND(SUMIFS({s}$F${PIERWSZY}:$F${OSTATNI},{s}$A${PIERWSZY}:$A${OSTATNI},">="&C{r},'
+                           f'{s}$A${PIERWSZY}:$A${OSTATNI},"<="&D{r}),2)')
             ws[f"F{r}"] = f'=IFERROR(VLOOKUP(A{r},{LIMITY_ZAKRES},3,FALSE),"")'
             przekroczono = przekroczono_w_kwartale(f"{s}$H${PIERWSZY}:$H${OSTATNI}", f"{s}$A${PIERWSZY}:$A${OSTATNI}",
                                                    f"C{r}", f"D{r}")
