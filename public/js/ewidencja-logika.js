@@ -92,7 +92,8 @@ export function tekstLiczby(wartosc) {
     const t = wartosc.toFixed(8).replace(/\.?0+$/, '');
     return t === '-0' ? '0' : t;
   }
-  const zSpacjami = String(wartosc ?? '').trim().replace(/\s*(zł|pln)$/i, '');
+  // Spacja po znaku („- 100”, „+ 100”) nie zmienia liczby: „- 100” to −100.
+  const zSpacjami = String(wartosc ?? '').trim().replace(/\s*(zł|pln)$/i, '').replace(/^([+\-−])\s+/, '$1');
   // Spacje (także twarde) tylko jako separator tysięcy: „1 234,50” tak, „12 34,5” nie.
   if (/\s/.test(zSpacjami) && !/^[+\-−]?\d{1,3}(\s\d{3})+([.,]\d+)?$/.test(zSpacjami)) throw new BladDanych('liczba');
   let t = zSpacjami.replace(/\s/g, '').replace(/^\+/, '');
@@ -466,20 +467,76 @@ export function wierszeEwidencji(wpisy, rok) {
 // ------------------------------------------------------------ import
 
 const RE_ISO = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/;
-const RE_PL = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/;
+const RE_PL = /^(\d{1,2})[.-](\d{1,2})[.-](\d{4})$/;
+const RE_UKOSNIK = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+const MIESIACE_DOPELNIACZ = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września',
+  'października', 'listopada', 'grudnia'];
 
-/** Data z arkusza: 'RRRR-MM-DD', 'DD.MM.RRRR', 'DD-MM-RRRR', 'DD/MM/RRRR' albo numer seryjny Excela. */
-export function odczytajDate(wartosc, system1904 = false) {
+/**
+ * Data z arkusza: 'RRRR-MM-DD', 'DD.MM.RRRR', 'DD-MM-RRRR', data z ukośnikiem albo numer seryjny Excela.
+ * Datę z ukośnikiem czyta jako 'DD/MM/RRRR', a przy ukosnik = 'MD' jako 'MM/DD/RRRR'. Import z pliku ustala tę
+ * kolejność dla całego pliku (kolejnoscUkosnika), bo pojedyncza data typu 04/03/2026 jej nie rozstrzyga.
+ */
+export function odczytajDate(wartosc, system1904 = false, ukosnik = 'DM') {
   if (typeof wartosc === 'number') return dataZSeryjnej(wartosc, system1904);
   const t = String(wartosc ?? '').trim();
   let r; let m; let d;
   let x = RE_ISO.exec(t);
   if (x) [r, m, d] = [x[1], x[2], x[3]];
   else if ((x = RE_PL.exec(t))) [r, m, d] = [x[3], x[2], x[1]];
+  else if ((x = RE_UKOSNIK.exec(t))) [r, m, d] = ukosnik === 'MD' ? [x[3], x[1], x[2]] : [x[3], x[2], x[1]];
   else if (/^\d{5}(\.\d+)?$/.test(t)) return dataZSeryjnej(Number(t), system1904);
   else return null;
   const iso = `${r}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   return poprawnaData(iso) ? iso : null;
+}
+
+/** Części daty z ukośnikiem jako liczby [pierwsza, druga, rok] albo null, gdy wartość nie jest taką datą. */
+function czesciUkosnika(wartosc) {
+  const x = typeof wartosc === 'string' ? RE_UKOSNIK.exec(wartosc.trim()) : null;
+  return x ? [Number(x[1]), Number(x[2]), x[3]] : null;
+}
+
+/**
+ * Kolejność dnia i miesiąca w datach z ukośnikiem całego pliku: 'DM', gdy w którejś dacie pierwsza część jest większa
+ * niż 12, 'MD', gdy druga; 'sprzeczna', gdy w pliku są oba przypadki, a '' (nierozstrzygnięta), gdy żaden.
+ */
+export function kolejnoscUkosnika(wartosci) {
+  let dm = false;
+  let md = false;
+  for (const v of wartosci) {
+    const c = czesciUkosnika(v);
+    if (!c) continue;
+    if (c[0] > 12 && c[1] <= 12) dm = true;
+    if (c[1] > 12 && c[0] <= 12) md = true;
+  }
+  if (dm && md) return 'sprzeczna';
+  return dm ? 'DM' : (md ? 'MD' : '');
+}
+
+/** Komunikat dla daty z ukośnikiem, której kolejności plik nie rozstrzyga, np. „04/03/2026”: podaje oba odczyty. */
+export function opisNiejednoznacznejDaty(wartosc) {
+  const t = String(wartosc).trim();
+  const [a, b, r] = czesciUkosnika(t);
+  const dd = String(a).padStart(2, '0');
+  const mm = String(b).padStart(2, '0');
+  return `data ${t} jest niejednoznaczna (${a} ${MIESIACE_DOPELNIACZ[b - 1]} albo ${b} ${MIESIACE_DOPELNIACZ[a - 1]}): `
+    + `użyj ${dd}.${mm}.${r} albo ${r}-${mm}-${dd}`;
+}
+
+/**
+ * Data z pliku przy ustalonej kolejności ukośnika: { data } (null, gdy nieczytelna) albo { blad } z powodem dla
+ * daty z ukośnikiem, której nie da się odczytać pewnie. Dzień równy miesiącowi jest jednoznaczny.
+ */
+function dataZPliku(wartosc, system1904, kolejnosc) {
+  const c = czesciUkosnika(wartosc);
+  if (c && c[0] >= 1 && c[0] <= 12 && c[1] >= 1 && c[1] <= 12 && c[0] !== c[1]) {
+    if (kolejnosc === '') return { blad: opisNiejednoznacznejDaty(wartosc) };
+  }
+  if (c && kolejnosc === 'sprzeczna') {
+    return { blad: `data ${String(wartosc).trim()}: daty z ukośnikiem w pliku mają raz dzień, raz miesiąc na początku, użyj zapisu DD.MM.RRRR albo RRRR-MM-DD` };
+  }
+  return { data: odczytajDate(wartosc, system1904, kolejnosc === 'MD' ? 'MD' : 'DM') };
 }
 
 /**
@@ -512,10 +569,17 @@ const jestLiczba = (v) => { try { tekstLiczby(v); return true; } catch { return 
  * dodatniej to błąd wiersza (zwrot zapisany bez minusa). Kurs bez waluty albo przy PLN (inny niż 1) też.
  * Opcja system1904: numery seryjne dat liczone od 1904 (XLSX, który tak deklaruje), w każdej kolumnie dat.
  * Opcja scisleKolumny (CSV): niepuste pole za ostatnią kolumną nagłówka to błąd wiersza, bo zwykle oznacza
- * przecinek dziesiętny bez cudzysłowu w pliku z separatorem „,”.
+ * przecinek dziesiętny bez cudzysłowu w pliku z separatorem „,” albo średnik w tekście przy separatorze „;”. Wartość
+ * to wykryty separator (',', ';', '\t'), od którego zależy podpowiedź; true działa jak ','.
+ * Opcja bladBezNaglowka: gdy niepusta, plik bez nagłówka, którego pierwszy niepusty wiersz wygląda na dane (data w A
+ * albo liczba w C), zwraca jeden błąd z tym powodem zamiast czytać układ A–E; obcy nagłówek dostaje „nie rozpoznano nagłówka”.
+ * Daty z ukośnikiem: kolejność dnia i miesiąca ustala się raz dla całego pliku (kolumna daty i kolumna J); gdy plik
+ * jej nie rozstrzyga, data typu 04/03/2026 to błąd wiersza, a 05/05/2026 wczytuje się normalnie.
  * Zwraca { wpisy, bledy: [{ wiersz, powod }] }; numer wiersza jak w arkuszu (od 1).
  */
-export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false, scisleKolumny = false } = {}) {
+export function wierszeNaWpisy(wiersze, {
+  pierwszyNumer = 1, system1904 = false, scisleKolumny = false, bladBezNaglowka = '',
+} = {}) {
   let kol = { data: 0, opis: 1, kwota: 2, waluta: 3, kurs: 4, dotyczy: -1 };
   let start = 0;
   let ostatniaKolumna = Infinity;
@@ -534,10 +598,17 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false,
   }
   if (start === 0) {
     const i = wiersze.findIndex((w) => (w ?? []).some((x) => String(x ?? '').trim() !== ''));
-    if (i >= 0 && !odczytajDate(wiersze[i][0] ?? '', system1904) && !jestLiczba(wiersze[i][2] ?? '')) {
+    const a = wiersze[i]?.[0] ?? '';
+    if (i >= 0 && !odczytajDate(a, system1904) && !odczytajDate(a, system1904, 'MD') && !jestLiczba(wiersze[i][2] ?? '')) {
       return { wpisy: [], bledy: [{ wiersz: i + pierwszyNumer, powod: 'nie rozpoznano nagłówka: plik potrzebuje kolumn „Data” i „Kwota” (jak w arkuszu), a bez nagłówka dat w kolumnie A i kwot w kolumnie C' }] };
     }
+    if (i >= 0 && bladBezNaglowka) return { wpisy: [], bledy: [{ wiersz: i + pierwszyNumer, powod: bladBezNaglowka }] };
   }
+  const kolejnosc = kolejnoscUkosnika(wiersze.slice(start).flatMap((w) => [w?.[kol.data], kol.dotyczy >= 0 ? w?.[kol.dotyczy] : undefined]));
+  const podpowiedzPol = {
+    ';': 'więcej pól niż kolumn w nagłówku: przy separatorze „;” tekst ze średnikiem (np. opis) wpisz w cudzysłowie, np. "Kolczyki; srebro"',
+    '\t': 'więcej pól niż kolumn w nagłówku: przy separatorze tabulacji tekst z tabulatorem wpisz w cudzysłowie albo usuń tabulator',
+  }[scisleKolumny] ?? 'więcej pól niż kolumn w nagłówku: przy separatorze „,” liczbę z przecinkiem (kwotę albo kurs) wpisz w cudzysłowie, np. "49,90"';
   const wpisy = [];
   const bledy = [];
   for (let i = start; i < wiersze.length; i += 1) {
@@ -548,19 +619,29 @@ export function wierszeNaWpisy(wiersze, { pierwszyNumer = 1, system1904 = false,
     if (String(surowaData).trim() === '' && String(surowaKwota).trim() === '') continue;
     const numer = i + pierwszyNumer;
     if (scisleKolumny && w.some((x, k) => k > ostatniaKolumna && String(x ?? '').trim() !== '')) {
-      bledy.push({ wiersz: numer, powod: 'więcej pól niż kolumn w nagłówku: przy separatorze „,” liczbę z przecinkiem (kwotę albo kurs) wpisz w cudzysłowie, np. "49,90"' });
+      bledy.push({ wiersz: numer, powod: podpowiedzPol });
       continue;
     }
-    const data = odczytajDate(surowaData, system1904);
+    const odczyt = dataZPliku(surowaData, system1904, kolejnosc);
+    if (odczyt.blad) { bledy.push({ wiersz: numer, powod: odczyt.blad }); continue; }
+    const { data } = odczyt;
     if (!data) { bledy.push({ wiersz: numer, powod: 'niepoprawna data' }); continue; }
     let opis = String(komorka(kol.opis));
     if (/^'[=+\-@]/.test(opis)) opis = opis.slice(1); // ochrona przed formułami z naszego eksportu CSV
     if (niejednoznacznaKwota(surowaKwota)) { bledy.push({ wiersz: numer, powod: opisNiejednoznacznejKwoty(surowaKwota) }); continue; }
     // Data, której dotyczy zwrot: nieczytelną przekazujemy dalej, żeby normalizujWpis zgłosił błąd wiersza.
     const surowaDotyczy = komorka(kol.dotyczy);
-    const dotyczy = String(surowaDotyczy).trim() === '' ? '' : (odczytajDate(surowaDotyczy, system1904) ?? String(surowaDotyczy));
+    let dotyczy = '';
+    if (String(surowaDotyczy).trim() !== '') {
+      const odczytDotyczy = dataZPliku(surowaDotyczy, system1904, kolejnosc);
+      if (odczytDotyczy.blad) { bledy.push({ wiersz: numer, powod: `kolumna „Zwrot dotyczy sprzedaży z dnia”: ${odczytDotyczy.blad}` }); continue; }
+      dotyczy = odczytDotyczy.data ?? String(surowaDotyczy);
+    }
     if (dotyczy && jestLiczba(surowaKwota) && !tekstLiczby(surowaKwota).startsWith('-')) {
-      bledy.push({ wiersz: numer, powod: 'kolumna „Zwrot dotyczy sprzedaży z dnia” (w arkuszu J) jest wypełniona, a kwota jest dodatnia: zwrot wpisz z minusem albo wyczyść tę kolumnę' });
+      const zero = /^0(\.0*)?$/.test(tekstLiczby(surowaKwota));
+      bledy.push({ wiersz: numer, powod: zero
+        ? 'kolumna „Zwrot dotyczy sprzedaży z dnia” (w arkuszu J) jest wypełniona, a kwota wynosi 0: wpisz kwotę zwrotu z minusem albo wyczyść tę kolumnę'
+        : 'kolumna „Zwrot dotyczy sprzedaży z dnia” (w arkuszu J) jest wypełniona, a kwota jest dodatnia: zwrot wpisz z minusem albo wyczyść tę kolumnę' });
       continue;
     }
     const waluta = String(komorka(kol.waluta)).trim();

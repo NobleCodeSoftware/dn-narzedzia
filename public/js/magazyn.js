@@ -241,12 +241,13 @@ function usun(klucze) {
  * Wyłączenie „Pamiętaj wpisy ewidencji”: usuwa wpisy, faktury i utratę prawa, zostawia ustawienia. Dane sprzedawcy
  * i klientów zapisane przez starszą wersję w kluczu faktur najpierw przenosi do ich klucza (decyduje o nich drugi
  * przełącznik albo wybór po przejściu ze starszej wersji).
+ * Najpierw wyłącza zapamiętywanie, a dopiero potem usuwa klucze: inna otwarta karta sprawdza ustawienie przed zapisem,
+ * więc po usunięciu nie odtworzy już wpisów ani faktur.
  */
 export function usunWpisy() {
   przeniesDaneZWczesniejszejWersji();
-  const ok = usun([KLUCZ, KLUCZ_FAKTURY]);
   zmienUstawienia({ pamietaj: false });
-  return ok;
+  return usun([KLUCZ, KLUCZ_FAKTURY]);
 }
 
 /**

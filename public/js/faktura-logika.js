@@ -266,19 +266,23 @@ export function najwczesniejszeWystawienie(dataSprzedazy, zaplaty = []) {
  * - termin wystawienia (art. 106i ust. 1, 2 i 6), pierwsza pasująca reguła:
  *   a) zaliczka przed dostawą i żądanie do końca miesiąca zaliczki: 15. dzień miesiąca po miesiącu zaliczki;
  *   a′) żądanie do końca miesiąca dostawy: 15. dzień miesiąca po miesiącu dostawy;
- *   b) żądanie po miesiącu dostawy, ale do końca miesiąca wpłaty po dostawie: przepisy tego nie rozstrzygają, więc
- *      termin to późniejsza z dat (15. dzień miesiąca po dostawie albo dzień żądania) i terminNiejasny: true;
+ *   b) żądanie po miesiącu dostawy, ale do końca miesiąca wpłaty otrzymanej po dostawie: termin jak w c), czyli 15 dni
+ *      od żądania (art. 106i ust. 6 pkt 2). Ust. 6 pkt 1 odsyła do ust. 1 i 2, a ust. 2 i ust. 7 pkt 2 dotyczą tylko
+ *      zapłaty przed dostawą, więc wpłata po dostawie (także dopisana później) terminu nie zmienia. Przepis nie mówi
+ *      tego wprost, dlatego terminNiejasny: true i terminBezpieczny: 15. dzień miesiąca po dostawie, gdy wypada po dniu
+ *      żądania (dosłowne czytanie pkt 1 z ust. 1), a w przeciwnym razie '' (wystawić od razu);
  *   c) w pozostałych przypadkach: 15 dni od żądania;
  * - nie wcześniej niż 60 dni przed dostawą albo przed wcześniejszą od niej wpłatą (art. 106i ust. 7), nigdy po terminie.
  * Bez daty żądania termin jak przy żądaniu w miesiącu dostawy.
- * Zwraca { zadanieDo, termin, przepis, poTerminieZadania, terminNiejasny, najwczesniej, zaplaty }.
+ * Zwraca { zadanieDo, termin, przepis, poTerminieZadania, terminNiejasny, terminBezpieczny, najwczesniej, zaplaty }.
+ * terminBezpieczny jest niepusty tylko w regule b) (data 'RRRR-MM-DD'); w pozostałych regułach zawsze ''.
  */
 export function terminy(dataSprzedazy, dataZadania = '', zaplaty = []) {
   if (!poprawnaData(dataSprzedazy)) throw new BladDanych('Podaj datę sprzedaży.');
   const wplaty = normalizujZaplaty(zaplaty);
   const okna = [dataSprzedazy, ...wplaty].map((d) => koniecMiesiacaPo(d, 3));
   const zadanieDo = okna.sort().at(-1);
-  const baza = { zadanieDo, poTerminieZadania: false, terminNiejasny: false, najwczesniej: najwczesniejszeWystawienie(dataSprzedazy, wplaty), zaplaty: wplaty };
+  const baza = { zadanieDo, poTerminieZadania: false, terminNiejasny: false, terminBezpieczny: '', najwczesniej: najwczesniejszeWystawienie(dataSprzedazy, wplaty), zaplaty: wplaty };
   const wynik = wybierzTermin(baza, dataSprzedazy, dataZadania, wplaty, okna);
   return wynik.termin < wynik.najwczesniej ? { ...wynik, najwczesniej: wynik.termin } : wynik;
 }
@@ -292,7 +296,10 @@ function wybierzTermin(baza, dataSprzedazy, dataZadania, wplaty, okna) {
   if (dataZadania <= koniec) return { ...baza, termin: pietnastyPo(dataSprzedazy), przepis: 'art. 106i ust. 6 pkt 1' };
   if (!poTerminieZadania && wplaty.some((d) => d > dataSprzedazy && dataZadania <= koniecMiesiaca(d))) {
     const pietnasty = pietnastyPo(dataSprzedazy);
-    return { ...baza, termin: dataZadania > pietnasty ? dataZadania : pietnasty, przepis: 'art. 106i ust. 6', terminNiejasny: true };
+    return {
+      ...baza, termin: dodajDni(dataZadania, 15), przepis: 'art. 106i ust. 6 pkt 2',
+      terminNiejasny: true, terminBezpieczny: pietnasty > dataZadania ? pietnasty : '',
+    };
   }
   return { ...baza, termin: dodajDni(dataZadania, 15), przepis: 'art. 106i ust. 6 pkt 2', poTerminieZadania };
 }
@@ -304,7 +311,10 @@ export function opisTerminu(t, { zadanie = '' } = {}) {
   if (t.poTerminieZadania) {
     return `Prośba przyszła po ${dataPl(t.zadanieDo)}, czyli po 3 miesiącach od końca miesiąca sprzedaży albo zapłaty (art. 106b ust. 3 pkt 2).`;
   }
-  if (t.terminNiejasny) return `Przepisy nie rozstrzygają terminu w tej sytuacji. Wystaw fakturę niezwłocznie, najpóźniej ${dataPl(t.termin)}.`;
+  if (t.terminNiejasny) {
+    const kiedy = t.terminBezpieczny ? `do ${dataPl(t.terminBezpieczny)}` : 'od razu';
+    return `Termin wystawienia: do ${dataPl(t.termin)} (15 dni od prośby, ${t.przepis} ustawy o VAT). Przy zapłacie po sprzedaży przepis da się czytać surowiej, więc najbezpieczniej wystawić fakturę ${kiedy}.`;
+  }
   const tekst = `Termin wystawienia: do ${dataPl(t.termin)} (${t.przepis} ustawy o VAT).`;
   return zadanie ? tekst : `${tekst} Klient może poprosić do ${dataPl(t.zadanieDo)}.`;
 }

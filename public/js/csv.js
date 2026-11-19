@@ -98,8 +98,18 @@ export function dekodujCsv(bajty) {
   }
 }
 
-/** CSV (tekst albo bajty pliku) → { wpisy, bledy }. */
+export const BLAD_CSV_BEZ_NAGLOWKA = 'plik z separatorem „,” nie ma nagłówka, więc nie da się odróżnić przecinka '
+  + 'dziesiętnego od separatora: dodaj pierwszy wiersz z nazwami kolumn, np. Data,Opis,Kwota,Waluta,Kurs NBP, '
+  + 'a kwoty z przecinkiem wpisz w cudzysłowie, np. "49,90"';
+
+/**
+ * CSV (tekst albo bajty pliku) → { wpisy, bledy }. Plik z separatorem „,” musi mieć nagłówek: bez niego „49,90”
+ * rozpada się na dwa pola (opis 49 i kwota 90) i nie ma po czym tego poznać.
+ */
 export function importujCsv(dane) {
   const tekst = typeof dane === 'string' ? dane : dekodujCsv(dane);
-  return wierszeNaWpisy(parsujCsv(tekst), { scisleKolumny: true });
+  const separator = wykryjSeparator(tekst);
+  return wierszeNaWpisy(parsujCsv(tekst, separator), {
+    scisleKolumny: separator, bladBezNaglowka: separator === ',' ? BLAD_CSV_BEZ_NAGLOWKA : '',
+  });
 }

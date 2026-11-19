@@ -7,7 +7,7 @@ Bez kont i bez serwera aplikacji: wszystko działa w przeglądarce.
 
 > Eksperyment NobleCode, prowadzony z udziałem AI · Nie stanowi doradztwa podatkowego
 
-Wersja 0.4.5. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
+Wersja 0.4.6. Strony są indeksowane przez wyszukiwarki (zob. „Wdrożenie”).
 
 ## Co jest w środku
 
@@ -88,20 +88,33 @@ Wydruk ma te kolumny oraz opis, narastająco w kwartale i walutę z kursem.
 Import XLSX/CSV przyjmuje kwoty w zapisie polskim i angielskim („1 234,50”, „1.234,50”, „1,234.50”). Kwotę z jednym
 separatorem i dokładnie trzema cyframi po nim („1,234”, „1.234”) odrzuca z błędem wiersza, bo może oznaczać 1234 zł
 albo 1,234 zł; formularz pokazuje wtedy komunikat. Separator tysięcy (kropka, przecinek albo spacja) musi dzielić
-liczbę co trzy cyfry: „1,234,5”, „1.23,45” i „12 34,5” to błąd wiersza, a nie 12345 albo 123,45.
+liczbę co trzy cyfry: „1,234,5”, „1.23,45” i „12 34,5” to błąd wiersza, a nie 12345 albo 123,45. Spacja po znaku
+minus jest dopuszczalna: „- 100” to −100.
+
+Daty: „RRRR-MM-DD”, „DD.MM.RRRR” i „DD-MM-RRRR” zawsze jako dzień, miesiąc, rok. Kolejność w datach z ukośnikiem
+(„04/03/2026”) ustala się dla całego pliku: gdy w którejś dacie pierwsza część jest większa niż 12, plik ma zapis
+DD/MM, a gdy druga, MM/DD (np. eksport z programu w wersji angielskiej). Gdy plik tego nie rozstrzyga, data
+z różnym dniem i miesiącem (np. „04/03/2026”: 4 marca albo 3 kwietnia) to błąd wiersza z prośbą o zapis
+„04.03.2026” albo „2026-03-04”; data typu „05/05/2026” jest jednoznaczna. Plik z oboma zapisami naraz dostaje błąd
+przy każdej dacie z ukośnikiem.
 
 Kolumny są rozpoznawane po nagłówku („Data” albo „Data sprzedaży”, „Kwota” albo „Kwota sprzedaży”, „Opis”, „Waluta”,
-„Kurs NBP”, „Zwrot dotyczy sprzedaży z dnia”). **CSV bez nagłówka** jest czytany w układzie A–E (data, opis, kwota,
-waluta, kurs), a kolumna J jest wtedy pomijana: datę sprzedaży, której dotyczy zwrot, import czyta tylko z pliku
+„Kurs NBP”, „Zwrot dotyczy sprzedaży z dnia”). **CSV bez nagłówka** z separatorem „;” albo tabulatorem jest czytany
+w układzie A–E (data, opis, kwota, waluta, kurs), a kolumna J jest wtedy pomijana: datę sprzedaży, której dotyczy zwrot, import czyta tylko z pliku
 z nagłówkiem. Gdy nagłówka nie ma, a pierwszy wiersz nie zaczyna się datą i nie ma kwoty w kolumnie C (np. nagłówek
-po angielsku), import odmawia z jednym komunikatem zamiast czytać kolumny po pozycji.
+po angielsku), import odmawia z jednym komunikatem zamiast czytać kolumny po pozycji. CSV bez nagłówka z separatorem
+„,” jest odrzucany z prośbą o dodanie nagłówka: bez niego „2026-10-01,49,90” to równie dobrze kwota 49,90 zł, jak opis
+„49” i kwota 90 zł, a import nie ma po czym tego rozróżnić. Plik z nagłówkiem w innym języku (np. Date, Description,
+Amount) dostaje komunikat o nierozpoznanym nagłówku niezależnie od separatora.
 
 Kolumna J („Zwrot dotyczy sprzedaży z dnia”) jest nieobowiązkowa. Pliki bez niej (eksporty sprzed wersji 0.4.4,
 arkusze z innych programów) wczytują się jak dotąd. Data w kolumnie J liczy się tylko przy zwrocie; błędna albo późniejsza
-niż data dokumentu korekty daje błąd wiersza, a wypełniona przy kwocie dodatniej też (zwrot zapisany bez minusa).
+niż data dokumentu korekty daje błąd wiersza, a wypełniona przy kwocie dodatniej albo zerowej też (zwrot zapisany
+bez minusa).
 
 Inne błędy wiersza zamiast cichej zmiany danych: kurs bez waluty, kurs przy kwocie w PLN (inny niż 1), w CSV
-z nagłówkiem pole za ostatnią kolumną nagłówka (zwykle przecinek dziesiętny bez cudzysłowu przy separatorze „,”),
+z nagłówkiem pole za ostatnią kolumną nagłówka (zwykle przecinek dziesiętny bez cudzysłowu przy separatorze „,”
+albo średnik w opisie bez cudzysłowu przy separatorze „;”; podpowiedź zależy od wykrytego separatora),
 w XLSX liczba w kolumnie daty, która nie jest datą Excela (np. 5 albo 3123456789). Niezamknięty cudzysłów w CSV
 zatrzymuje cały import z numerem wiersza. CSV zapisany w Windows-1250 (polski Excel) jest rozpoznawany, gdy plik nie
 jest poprawnym UTF-8. W XLSX z systemem dat 1904 każda kolumna dat liczy się według tego systemu.
@@ -153,9 +166,11 @@ wystawić fakturę w KSeF. Przepisy sprawdzono u źródła 22.10.2026; art. 106b
   3 miesięcy od końca miesiąca dostawy „bądź otrzymano całość lub część zapłaty” (art. 106b ust. 3 pkt 2). Okno liczy się od
   miesiąca dostawy i od miesiąca każdej wpłaty podanej w formularzu (także zaliczki). Termin wystawienia (art. 106i ust. 1, 2
   i 6), pierwsza pasująca reguła: zaliczka i żądanie do końca jej miesiąca: 15. dzień miesiąca po zaliczce; żądanie
-  w miesiącu dostawy: 15. dzień miesiąca po dostawie; żądanie później, ale do końca miesiąca wpłaty po dostawie: przepisy
-  tego nie rozstrzygają, więc strona podaje późniejszą z dat (15. dzień po dostawie albo dzień żądania) i prosi o wystawienie
-  niezwłocznie; w pozostałych przypadkach 15 dni od żądania. Bez daty zapłaty liczy jak przy samej dostawie i podpowiada,
+  w miesiącu dostawy: 15. dzień miesiąca po dostawie; żądanie później, ale do końca miesiąca wpłaty otrzymanej po dostawie:
+  15 dni od żądania (art. 106i ust. 6 pkt 2), bo ust. 2 i ust. 7 pkt 2 dotyczą tylko zapłaty przed dostawą, więc wpłata
+  po dostawie, także dopisana później, terminu nie zmienia ani nie cofa. Przepis nie mówi tego wprost, dlatego strona
+  dodaje ostrożny wariant (`terminBezpieczny`): 15. dzień miesiąca po dostawie, gdy wypada po dniu żądania, a w przeciwnym
+  razie wystawienie od razu; w pozostałych przypadkach 15 dni od żądania. Bez daty zapłaty liczy jak przy samej dostawie i podpowiada,
   kiedy ją podać. Najwcześniej fakturę wystawia się 60 dni przed dostawą, a gdy klient zapłacił (także część) przed
   dostawą, 60 dni przed tą zapłatą (art. 106i ust. 7); ta granica nigdy nie wypada po terminie wystawienia. Wyjątku
   z art. 106i ust. 8 strona nie obsługuje: przy dostawach i usługach rozliczanych okresowo (art. 19a ust. 3, 4 i ust. 5
@@ -260,10 +275,10 @@ node --test            # Node 20+; bez zależności
 
 - `test/logic.test.js`: limit, progi, kwartały, strefa czasowa, kwoty.
 - `test/wspolne.test.js`: komunikaty progów, zdanie z kwotami, odczyt wpisu i tekst ogłoszenia dla czytnika ekranu, termin CEIDG w dzień wolny (dopisek z najbliższym dniem roboczym).
-- `test/pamiec.test.js`: dwa przełączniki pamięci, domyślnie faktury bez PESEL i danych klientów (rekord skrócony), numeracja i limit KSeF na rekordach skróconych, wyłączenie drugiego przełącznika usuwa dane osobowe także z faktur, usuwanie kluczy po wyłączeniu (zostaje tylko ustawienie), jednorazowy wybór po przejściu z wcześniejszej wersji (okno wyłączenia pamięci mówi o danych do faktur tylko wtedy, gdy rzeczywiście zostaną), brak zapisu wpisów i faktur po wyłączeniu pamięci w innej karcie, ustawienia wcześniejszych wersji nie są zgodą, „Wyczyść dane” usuwa też kopię roboczą pierwszej wersji strony.
+- `test/pamiec.test.js`: dwa przełączniki pamięci, domyślnie faktury bez PESEL i danych klientów (rekord skrócony), numeracja i limit KSeF na rekordach skróconych, wyłączenie drugiego przełącznika usuwa dane osobowe także z faktur, usuwanie kluczy po wyłączeniu (zostaje tylko ustawienie, najpierw wyłączenie, potem usunięcie), jednorazowy wybór po przejściu z wcześniejszej wersji (okno wyłączenia pamięci mówi o danych do faktur tylko wtedy, gdy rzeczywiście zostaną), brak zapisu wpisów i faktur po wyłączeniu pamięci w innej karcie, ustawienia wcześniejszych wersji nie są zgodą, „Wyczyść dane” usuwa też kopię roboczą pierwszej wersji strony.
 - `test/kalendarz-nbp.test.js`: Wielkanoc, święta 2026–2027, Wigilia wolna od 2025, dzień kursu przy weekendach i świętach, wybór kursu i zapytania NBP (bez sieci), kursy dla wielu wpisów naraz.
-- `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, zwroty (przekroczenie się nie cofa, ostrzeżenia, kwartał z samymi zwrotami), łączenie wpisów z dwóch kart, import, CSV i XLSX (round-trip, kolumna J z datą zwrotu i pliki bez niej, ponad 1000 wierszy, pliki z innych programów), formuły H i I wzoru XLSX (procent nie mniejszy niż 0, przekroczenie się nie cofa), sumy wzoru zaokrąglone do grosza, „Podsumowanie” 2026–2035 i płaca minimalna wzoru zgodna ze stroną, „zostało do limitu” 0 po przekroczeniu i zwrocie, import plików edytowanych ręcznie (niezamknięty cudzysłów, pola za nagłówkiem, nieznany nagłówek, grupy tysięcy, kurs bez waluty, kwota dodatnia z kolumną J, Windows-1250, system dat 1904, liczby w kolumnie daty), ZIP (w tym ochrona przed „bombą ZIP”).
-- `test/faktura.test.js`: numeracja, blokada faktur dla firm od 2027 r., limit 10 000 zł w 2026 r. (równo, +1 grosz, faktury z innych miejsc, utrata prawa w kolejnych miesiącach, osoba prywatna poza limitem), data wystawienia równa dziś, sumy brutto i zaokrąglenia, kwota słownie, NIP i PESEL, elementy faktury, terminy (także z datą zapłaty i zaliczki), faktury z KSeF w limicie 10 000 zł, usuwanie faktury po identyfikatorze, wydruk bez „null”, ewidencja bez dublowania, zachowanie bez `localStorage`, teksty okien (najwyżej 2 zdania w akapicie).
+- `test/ewidencja.test.js`: liczby i kwoty w PLN, sumy kwartałów, progi, prognoza, wartości F–I, wydruk, numeracja, zwroty (przekroczenie się nie cofa, ostrzeżenia, kwartał z samymi zwrotami), łączenie wpisów z dwóch kart, import (daty z ukośnikiem, spacja po minusie), CSV (bez nagłówka przy separatorze „,”) i XLSX (round-trip, kolumna J z datą zwrotu i pliki bez niej, ponad 1000 wierszy, pliki z innych programów), formuły H i I wzoru XLSX (procent nie mniejszy niż 0, przekroczenie się nie cofa), sumy wzoru zaokrąglone do grosza, „Podsumowanie” 2026–2035 i płaca minimalna wzoru zgodna ze stroną, „zostało do limitu” 0 po przekroczeniu i zwrocie, import plików edytowanych ręcznie (niezamknięty cudzysłów, pola za nagłówkiem, nieznany nagłówek, grupy tysięcy, kurs bez waluty, kwota dodatnia z kolumną J, Windows-1250, system dat 1904, liczby w kolumnie daty), ZIP (w tym ochrona przed „bombą ZIP”).
+- `test/faktura.test.js`: numeracja, blokada faktur dla firm od 2027 r., limit 10 000 zł w 2026 r. (równo, +1 grosz, faktury z innych miejsc, utrata prawa w kolejnych miesiącach, osoba prywatna poza limitem), data wystawienia równa dziś, sumy brutto i zaokrąglenia, kwota słownie, NIP i PESEL, elementy faktury, terminy (także z datą zapłaty i zaliczki, wpłata po dostawie nie skraca ani nie cofa terminu), faktury z KSeF w limicie 10 000 zł, usuwanie faktury po identyfikatorze, wydruk bez „null”, ewidencja bez dublowania, zachowanie bez `localStorage`, teksty okien (najwyżej 2 zdania w akapicie).
 - `test/zmiana-roku.test.js`: przejście z 2026 na 2027 przy symulowanym zegarze (31.12.2026, 1.01.2027, ostatnie dni kwartałów, 1.04.2027, 31.12.2027): data w Warszawie, limit kwartału i prognoza według bieżącej daty, historia i wydruk na przełomie roku, blokada faktur dla firm od 1.01.2027, numeracja od 1/2027, terminy faktury, dzień kursu NBP i zapytania przez granicę roku, ponowne przeliczenie po powrocie na kartę otwartą przed północą.
 - `test/strony.test.js` (metadane): tytuły, opisy, `canonical`, Open Graph, JSON-LD (tylko `/` i `/faktura/`, poprawny JSON, bez `aggregateRating` i `review`), mapa strony (`sitemap.xml`: adresy kanoniczne, aktualne `lastmod`) i `robots.txt`, strona `404.html` (noindex, bez `canonical` i JSON-LD).
 - `test/strony.test.js`: higiena stron: brak `noindex` na stronach z treścią i `noindex` na 404, nagłówki `X-Robots-Tag` w `_headers`, meta CSP zgodny z `_headers` (`connect-src` tylko `'self'` i api.nbp.pl), stopka, brak skryptów (poza blokiem danych `application/ld+json`), stylów i handlerów inline, brak zewnętrznych zasobów, w JS jedyny adres to API NBP w `nbp.js`, brak `document.cookie`/`innerHTML`, `localStorage` tylko w `magazyn.js`, `fetch` tylko w widoku ewidencji, etykiety pól i jeden region `aria-live`, strony prawne krótkie w porównaniu ze stronami funkcji (najwyżej 1,5× słów), brak odwołań do usuniętych stron, sekcja KSeF ≤ 150 słów, jedna akcja pobrania arkusza, arkusz bez makr i łączy, `_redirects` tylko stałe, w HTML jedyny adres e-mail to `kontakt@noblecode.pl`.

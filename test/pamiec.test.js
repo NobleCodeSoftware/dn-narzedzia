@@ -230,3 +230,33 @@ test('dane starszych wersji: ustawienia 0.4.1 nie są zgodą, „Wyczyść dane�
   [magazyn.KLUCZE_NAJSTARSZEJ_WERSJI[0]]: { wiersze: [['2026-10-19', 'Sesja – Jan Kowalski', '300']], nazwa: 'ewidencja.csv' },
   [magazyn.KLUCZE_NAJSTARSZEJ_WERSJI[1]]: '1',
 }));
+
+// Inna otwarta karta zapisuje wpisy tylko przy włączonym „Pamiętaj wpisy ewidencji”, więc ustawienie musi zmienić się
+// przed usunięciem kluczy: w przeciwnym razie w krótkim oknie karta mogłaby jeszcze odtworzyć wpisy.
+test('usunWpisy: najpierw wyłącza zapamiętywanie, potem usuwa wpisy i faktury; wynik jak dotąd', () => {
+  const kolejnosc = [];
+  const dane = new Map([[K.ewidencja, '{"wersja":1,"wpisy":[]}'], [K.faktury, '{"wersja":2,"faktury":[]}']]);
+  const atrapa = {
+    getItem: (k) => dane.get(k) ?? null,
+    setItem: (k, v) => { kolejnosc.push(`zapis ${k}`); dane.set(k, String(v)); },
+    removeItem: (k) => { kolejnosc.push(`usunięcie ${k}`); dane.delete(k); },
+  };
+  const opis = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { value: atrapa, configurable: true });
+  try {
+    assert.equal(magazyn.usunWpisy(), true);
+    const ustawienie = kolejnosc.indexOf(`zapis ${K.ustawienia}`);
+    assert.ok(ustawienie >= 0, kolejnosc.join(', '));
+    assert.ok(ustawienie < kolejnosc.indexOf(`usunięcie ${K.ewidencja}`), kolejnosc.join(', '));
+    assert.ok(ustawienie < kolejnosc.indexOf(`usunięcie ${K.faktury}`), kolejnosc.join(', '));
+    assert.deepEqual([...dane.keys()], [K.ustawienia]);
+    // Błąd przy usuwaniu: wynik false, a zapamiętywanie i tak wyłączone.
+    atrapa.removeItem = () => { throw new Error('blokada'); };
+    dane.set(K.ustawienia, '{"pamietaj":true}');
+    assert.equal(magazyn.usunWpisy(), false);
+    assert.equal(JSON.parse(dane.get(K.ustawienia)).pamietaj, false);
+  } finally {
+    if (opis) Object.defineProperty(globalThis, 'localStorage', opis);
+    else delete globalThis.localStorage;
+  }
+});

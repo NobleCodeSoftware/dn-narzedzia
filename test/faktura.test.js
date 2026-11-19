@@ -510,10 +510,9 @@ test('terminy z datą zapłaty: okno od miesiąca dostawy albo wpłaty, termin w
   const b = terminy('2026-10-20', '2026-10-25', ['2026-12-05']);
   assert.deepEqual([b.termin, b.terminNiejasny], ['2026-11-15', false]);
   const c = terminy('2026-10-20', '2026-11-05', ['2026-11-03']);
-  assert.deepEqual([c.termin, c.terminNiejasny], ['2026-11-15', true]);
+  assert.deepEqual([c.termin, c.terminNiejasny, c.terminBezpieczny], ['2026-11-20', true, '2026-11-15']);
   const d = terminy('2026-10-20', '2026-12-10', ['2026-12-05']);
-  assert.deepEqual([d.termin, d.terminNiejasny], ['2026-12-10', true]);
-  assert.equal(opisTerminu(d), 'Przepisy nie rozstrzygają terminu w tej sytuacji. Wystaw fakturę niezwłocznie, najpóźniej 10.12.2026.');
+  assert.deepEqual([d.termin, d.terminNiejasny, d.terminBezpieczny], ['2026-12-25', true, '']);
   // Bez wpłaty to samo żądanie (15.02.2027) jest już po terminie.
   assert.equal(terminy('2026-10-20', '2027-02-15').poTerminieZadania, true);
   // Po końcu okna wpłaty: po terminie.
@@ -556,15 +555,44 @@ test('teksty przy wpłatach i polu „inne faktury” na stronie są takie same 
   assert.match(html, new RegExp(`<label for="f-inne">${ETYKIETA_INNYCH} <span class="opcjonalne">`));
 });
 
-// Żądanie po miesiącu dostawy, ale do końca miesiąca późniejszej wpłaty: przepisy nie rozstrzygają terminu, więc
-// strona podaje późniejszą z dat (15. dzień po dostawie albo dzień żądania). Dotyczy to także żądania zgłoszonego
-// przed tą wpłatą. Termin jest wtedy wcześniejszy niż 15 dni od żądania, czyli ostrożny dla wystawcy.
-test('termin wystawienia, gdy żądanie faktury przyszło przed późniejszą wpłatą: nie później niż 15 dni od żądania', () => {
-  const b = terminy('2026-10-20', '2026-11-10', ['2026-12-05']);
-  assert.deepEqual([b.termin, b.terminNiejasny, b.poTerminieZadania], ['2026-11-15', true, false]);
-  const c = terminy('2026-10-20', '2026-11-10');
-  assert.deepEqual([c.termin, c.terminNiejasny], ['2026-11-25', false]);
-  assert.ok(b.termin <= c.termin);
+// Żądanie po miesiącu dostawy, ale do końca miesiąca wpłaty otrzymanej po dostawie: termin to 15 dni od żądania
+// (art. 106i ust. 6 pkt 2), bo ust. 2 dotyczy tylko zapłaty przed dostawą. Przepis nie mówi tego wprost, więc wynik
+// podaje też ostrożny wariant: 15. dzień miesiąca po dostawie, gdy wypada po dniu żądania, inaczej '' (wystawić od razu).
+test('reguła b: wpłata po dostawie, termin 15 dni od żądania i ostrożny wariant w terminBezpieczny', () => {
+  const przypadki = [
+    // sprzedaż, żądanie, wpłaty → termin, terminBezpieczny, terminNiejasny
+    [['2026-09-10', '2026-10-05', ['2026-10-20']], ['2026-10-20', '2026-10-15', true]],
+    [['2026-09-10', '2026-10-25', ['2026-10-20']], ['2026-11-09', '', true]],
+    [['2026-09-10', '2026-10-20', []], ['2026-11-04', '', false]],
+    [['2026-09-10', '2026-10-20', ['2026-10-28']], ['2026-11-04', '', true]],
+    [['2026-09-10', '2026-10-20', ['2026-11-05']], ['2026-11-04', '', true]],
+    [['2026-09-10', '2026-11-05', ['2026-10-15']], ['2026-11-20', '', false]],
+  ];
+  for (const [wejscie, oczekiwane] of przypadki) {
+    const t = terminy(...wejscie);
+    assert.deepEqual([t.termin, t.terminBezpieczny, t.terminNiejasny], oczekiwane, JSON.stringify(wejscie));
+    assert.equal(t.poTerminieZadania, false);
+  }
+  assert.equal(terminy('2026-09-10', '2026-11-05', ['2026-10-15']).przepis, 'art. 106i ust. 6 pkt 2', 'reguła c');
+  assert.equal(terminy('2026-09-10', '2026-10-05', ['2026-10-20']).przepis, 'art. 106i ust. 6 pkt 2');
+});
+
+test('reguła b: dopisanie wpłaty po dostawie nie cofa terminu', () => {
+  const bez = terminy('2026-10-20', '2026-11-10');
+  const z = terminy('2026-10-20', '2026-11-10', ['2026-12-05']);
+  assert.deepEqual([bez.termin, bez.terminNiejasny], ['2026-11-25', false]);
+  assert.deepEqual([z.termin, z.terminNiejasny, z.terminBezpieczny, z.poTerminieZadania], ['2026-11-25', true, '2026-11-15', false]);
+});
+
+test('reguła b: komunikat podaje termin z ust. 6 pkt 2 i ostrożny wariant („do …” albo „od razu”)', () => {
+  assert.equal(opisTerminu(terminy('2026-09-10', '2026-10-05', ['2026-10-20'])),
+    'Termin wystawienia: do 20.10.2026 (15 dni od prośby, art. 106i ust. 6 pkt 2 ustawy o VAT). Przy zapłacie po sprzedaży przepis da się czytać surowiej, więc najbezpieczniej wystawić fakturę do 15.10.2026.');
+  assert.equal(opisTerminu(terminy('2026-09-10', '2026-10-25', ['2026-10-20'])),
+    'Termin wystawienia: do 09.11.2026 (15 dni od prośby, art. 106i ust. 6 pkt 2 ustawy o VAT). Przy zapłacie po sprzedaży przepis da się czytać surowiej, więc najbezpieczniej wystawić fakturę od razu.');
+  // Poza regułą b pole jest zawsze puste.
+  for (const t of [terminy('2026-10-20'), terminy('2026-11-20', '2026-10-20', ['2026-10-05']), terminy('2026-10-20', '2027-04-01')]) {
+    assert.equal(t.terminBezpieczny, '');
+  }
 });
 
 test('KSeF od 1.01.2027: faktura dla firmy zablokowana z komunikatem o KSeF (wymaga NIP, mówi o tym ramka blokady)', () => {
@@ -661,8 +689,9 @@ test('zaliczka przed dostawą: najwcześniejsza data wystawienia liczy się od z
 
 test('zaliczka, dostawa i dopłata: żądanie w miesiącu dopłaty to termin niejasny', () => {
   const t = terminy('2026-11-20', '2026-12-15', ['2026-10-05', '2026-12-10']);
-  assert.equal(t.termin, '2026-12-15');
+  assert.equal(t.termin, '2026-12-30');
   assert.equal(t.terminNiejasny, true);
+  assert.equal(t.terminBezpieczny, '', '15.12.2026 to dzień żądania, więc ostrożnie: od razu');
   assert.equal(t.zadanieDo, '2027-03-31');
 });
 

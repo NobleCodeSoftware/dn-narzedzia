@@ -7,8 +7,9 @@ import {
   normalizujWpis, tekstLiczby, kwotaPlnGr, historiaKwartalow, prognoza, przebiegKwartalu, wartosciArkusza,
   wierszeEwidencji, wierszeNaWpisy, odczytajDate, granicaKwartalu, kolejnyNumer, posortuj, kwotaProgu,
   niejednoznacznaKwota, polaczWpisy, ostrzezeniaZwrotow, opisOstrzezeniaZwrotu, statusKwartalu, dataZSeryjnej,
+  kolejnoscUkosnika,
 } from '../public/js/ewidencja-logika.js';
-import { eksportujCsv, importujCsv, parsujCsv } from '../public/js/csv.js';
+import { eksportujCsv, importujCsv, parsujCsv, BLAD_CSV_BEZ_NAGLOWKA } from '../public/js/csv.js';
 import { eksportujXlsx, importujXlsx, komorkiArkusza } from '../public/js/xlsx.js';
 import { czytajZip, zapiszZip, crc32 } from '../public/js/zip.js';
 
@@ -282,6 +283,65 @@ test('import: kwota „1,234” albo „1.234” jest niejednoznaczna i odrzucon
     { wiersz: 2, powod: 'kwota 1,234 jest niejednoznaczna: wpisz 1234 (bez separatora tysięcy) albo 1,23' },
     { wiersz: 3, powod: 'kwota 1.234 jest niejednoznaczna: wpisz 1234 (bez separatora tysięcy) albo 1,23' },
   ]);
+});
+
+test('import: kolejność dnia i miesiąca w datach z ukośnikiem ustalana dla całego pliku', () => {
+  const sama = wierszeNaWpisy([['Data', 'Kwota'], ['04/03/2026', '10']]);
+  assert.deepEqual(sama.wpisy, []);
+  assert.deepEqual(sama.bledy, [{ wiersz: 2, powod: 'data 04/03/2026 jest niejednoznaczna (4 marca albo 3 kwietnia): użyj 04.03.2026 albo 2026-03-04' }]);
+  const dm = wierszeNaWpisy([['Data', 'Kwota'], ['04/03/2026', '10'], ['13/03/2026', '5']]);
+  assert.deepEqual(dm.bledy, []);
+  assert.deepEqual(dm.wpisy.map((x) => x.data), ['2026-03-04', '2026-03-13']);
+  const md = wierszeNaWpisy([['Data', 'Kwota'], ['04/03/2026', '10'], ['03/13/2026', '5']]);
+  assert.deepEqual(md.bledy, []);
+  assert.deepEqual(md.wpisy.map((x) => x.data), ['2026-04-03', '2026-03-13']);
+  // Oba zapisy w jednym pliku: błąd każdej daty z ukośnikiem, inne zapisy bez zmian.
+  const oba = wierszeNaWpisy([['Data', 'Kwota'], ['13/03/2026', '5'], ['03/13/2026', '5'], ['04.03.2026', '1']]);
+  assert.deepEqual(oba.bledy.map((b) => b.wiersz), [2, 3]);
+  assert.match(oba.bledy[0].powod, /raz dzień, raz miesiąc/);
+  assert.deepEqual(oba.wpisy.map((x) => x.data), ['2026-03-04']);
+  // Dzień równy miesiącowi jest jednoznaczny.
+  assert.deepEqual(wierszeNaWpisy([['Data', 'Kwota'], ['05/05/2026', '10']]).wpisy.map((x) => x.data), ['2026-05-05']);
+  // Kropka i myślnik zawsze jako DD.MM.RRRR.
+  assert.equal(odczytajDate('04.03.2026'), '2026-03-04');
+  assert.equal(odczytajDate('04-03-2026'), '2026-03-04');
+  assert.equal(odczytajDate('04/03/2026', false, 'MD'), '2026-04-03');
+  assert.deepEqual([kolejnoscUkosnika(['13/03/2026']), kolejnoscUkosnika(['03/13/2026']), kolejnoscUkosnika(['04/03/2026', 2])],
+    ['DM', 'MD', '']);
+  // Kolumna J też ustala kolejność i też dostaje błąd niejednoznacznej daty.
+  const j = wierszeNaWpisy([['Data', 'Kwota', 'Zwrot dotyczy sprzedaży z dnia'], ['2027-01-15', '-300', '04/03/2026']]);
+  assert.match(j.bledy[0].powod, /^kolumna „Zwrot dotyczy sprzedaży z dnia”: data 04\/03\/2026 jest niejednoznaczna/);
+  const jMd = wierszeNaWpisy([['Data', 'Kwota', 'Zwrot dotyczy sprzedaży z dnia'], ['01/15/2027', '-300', '12/20/2026']]);
+  assert.deepEqual(jMd.bledy, []);
+  assert.deepEqual([jMd.wpisy[0].data, jMd.wpisy[0].dotyczy], ['2027-01-15', '2026-12-20']);
+  // Plik bez nagłówka z datą MM/DD w kolumnie A nie jest brany za nieznany nagłówek.
+  assert.deepEqual(importujCsv('03/13/2026;Kubek;49,90\r\n').wpisy.map((x) => x.data), ['2026-03-13']);
+});
+
+test('import: spacja po minusie, kwota 0 przy kolumnie J, podpowiedź o polach zależna od separatora', () => {
+  assert.equal(tekstLiczby('- 100'), '-100');
+  assert.equal(tekstLiczby('−  1 234,50'), '-1234.50');
+  const minus = wierszeNaWpisy([['Data', 'Kwota'], ['2026-10-01', '- 100']]);
+  assert.deepEqual(minus.bledy, []);
+  assert.equal(minus.wpisy[0].kwota, '-100');
+  const zero = wierszeNaWpisy([['Data', 'Kwota', 'Zwrot dotyczy sprzedaży z dnia'], ['2027-01-15', '0', '2026-12-20'], ['2027-01-15', '5', '2026-12-20']]);
+  assert.match(zero.bledy[0].powod, /kwota wynosi 0/);
+  assert.match(zero.bledy[1].powod, /kwota jest dodatnia/);
+  const sredniki = importujCsv('Data;Opis;Kwota\r\n2026-10-01;30 cm;srebro;49,90\r\n');
+  assert.match(sredniki.bledy[0].powod, /separatorze „;”.*średnikiem/);
+  assert.doesNotMatch(sredniki.bledy[0].powod, /„,”/);
+  const przecinki = importujCsv('Data,Opis,Kwota\n2026-10-01,Kubek,49,90\n');
+  assert.match(przecinki.bledy[0].powod, /separatorze „,”/);
+  assert.match(importujCsv('Data\tKwota\r\n2026-10-01\t10\tx\r\n').bledy[0].powod, /tabulac/);
+});
+
+test('CSV bez nagłówka z separatorem „,” jest odrzucany z prośbą o nagłówek', () => {
+  const wynik = importujCsv('2026-10-01,49,90\n');
+  assert.deepEqual(wynik, { wpisy: [], bledy: [{ wiersz: 1, powod: BLAD_CSV_BEZ_NAGLOWKA }] });
+  assert.match(BLAD_CSV_BEZ_NAGLOWKA, /dodaj pierwszy wiersz z nazwami kolumn/);
+  // Z nagłówkiem albo ze średnikiem bez zmian.
+  assert.deepEqual(importujCsv('Data,Opis,Kwota\n2026-10-01,Kubek,"49,90"\n').wpisy.map((x) => x.kwota), ['49.90']);
+  assert.deepEqual(importujCsv('2026-10-01;Kubek;49,90\r\n').wpisy.map((x) => x.kwota), ['49.90']);
 });
 
 // ---------------------------------------------------------------- CSV
@@ -835,6 +895,12 @@ test('import: nagłówek „Data sprzedaży” rozpoznany, nieznany nagłówek o
   assert.deepEqual(obcy.wpisy, []);
   assert.equal(obcy.bledy.length, 1);
   assert.match(obcy.bledy[0].powod, /nie rozpoznano nagłówka/);
+  // Obcy nagłówek przy separatorze „,” to też nierozpoznany nagłówek, a nie brak nagłówka.
+  const obcyPrzecinek = importujCsv('Date,Description,Amount\n2026-10-01,x,10\n');
+  assert.deepEqual(obcyPrzecinek.wpisy, []);
+  assert.equal(obcyPrzecinek.bledy.length, 1);
+  assert.match(obcyPrzecinek.bledy[0].powod, /nie rozpoznano nagłówka/);
+  assert.doesNotMatch(obcyPrzecinek.bledy[0].powod, /nie ma nagłówka/);
   // Bez nagłówka, z datą w A i kwotą w C: układ A–E jak dotąd.
   assert.deepEqual(importujCsv('2026-10-01;Kubek;49,90\r\n').wpisy.map((x) => x.kwota), ['49.90']);
 });
